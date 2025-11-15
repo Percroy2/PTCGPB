@@ -1,3 +1,7 @@
+; Inclure Utils.ahk AVANT Logging.ahk (Logging.ahk a besoin de ReadFile de Utils.ahk)
+#Include %A_ScriptDir%\ConfigManager.ahk
+#Include %A_ScriptDir%\StateManager.ahk
+#Include %A_ScriptDir%\Utils.ahk
 #Include %A_ScriptDir%\Logging.ahk
 
 #SingleInstance, force
@@ -196,11 +200,6 @@ getMumuInstanceNumFromPlayerName(scriptName := "") {
     }
 }
 
-; Temporary function to avoid an error in Logging.ahk
-ReadFile(filename) {
-    return false
-}
-
 ; Function to run as a NON-adminstrator, since MuMu has issues if run as Administrator
 ; See: https://www.reddit.com/r/AutoHotkey/comments/bfd6o1/how_to_run_without_administrator_privileges/
 /*
@@ -254,14 +253,5 @@ ShellRun(prms*)
     }
 }
 
-isMuMuv5(){
-    global folderPath
-    mumuFolder := folderPath . "\MuMuPlayerGlobal-12.0"
-    if !FileExist(mumuFolder)
-        mumuFolder := folderPath . "\MuMu Player 12"
-    if FileExist(mumuFolder . "\nx_main")
-        return true
-    return false
-}
 
 ~+F7::ExitApp

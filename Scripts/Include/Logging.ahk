@@ -1,6 +1,30 @@
+#Include *i Utils.ahk
+
 global ScriptDir := RegExReplace(A_LineFile, "\\[^\\]+$"), LogsDir := ScriptDir . "\..\..\Logs"
 global Debug, discordWebhookURL, discordUserId, sendAccountXml
 global DEFAULT_STATUS_MESSAGE := "..."
+
+; Fonction locale pour lire un fichier (utilisée uniquement si ReadFile de Utils.ahk n'est pas disponible)
+; Utilise un nom unique pour éviter les conflits
+LoggingReadFile(filename, numbers := false) {
+    FileRead, content, %A_ScriptDir%\..\%filename%.txt
+    
+    if (!content)
+        return false
+    
+    values := []
+    ; En AutoHotkey v1, utiliser StringSplit au lieu de StrSplit
+    StringSplit, lines, content, `n
+    Loop, %lines0%
+    {
+        val := Trim(lines%A_Index%)
+        cleanVal := RegExReplace(val, "[^a-zA-Z0-9]") ; Remove non-alphanumeric characters
+        if (cleanVal != "")
+            values.Push(cleanVal)
+    }
+    
+    return values.MaxIndex() ? values : false
+}
 
 ; Read settings.
 settingsPath := ScriptDir . "\..\..\Settings.ini"
@@ -113,7 +137,12 @@ LogToDiscord(message, screenshotFile := "", ping := false, xmlFile := "", screen
         userId := (altUserId ? altUserId : discordUserId)
 
         discordPing := "<@" . userId . "> "
-        discordFriends := ReadFile("discord")
+        ; Utiliser ReadFile de Utils.ahk si disponible, sinon utiliser la fonction locale
+        if (IsFunc("ReadFile")) {
+            discordFriends := ReadFile("discord")
+        } else {
+            discordFriends := LoggingReadFile("discord")
+        }
         if (discordFriends) {
             for index, value in discordFriends {
                 if (value = userId)

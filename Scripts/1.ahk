@@ -8,6 +8,9 @@
 #Include *i %A_ScriptDir%\Include\Gdip_Extra.ahk
 
 ; Refactored includes - organized by functionality
+; Inclure ConfigManager et StateManager AVANT Utils.ahk (Utils.ahk en a besoin)
+#Include %A_ScriptDir%\Include\ConfigManager.ahk
+#Include %A_ScriptDir%\Include\StateManager.ahk
 #Include %A_ScriptDir%\Include\Utils.ahk
 #Include %A_ScriptDir%\Include\Database.ahk
 #Include %A_ScriptDir%\Include\CardDetection.ahk
