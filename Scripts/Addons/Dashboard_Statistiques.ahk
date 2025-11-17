@@ -8,14 +8,18 @@ currentPID := DllCall("GetCurrentProcessId")
 FileDelete, %lockFile%
 FileAppend, %currentPID%, %lockFile%
 
-; Fonction pour créer le lock file à la sortie (fallback)
+; Fonction pour nettoyer le lock file à la sortie (fallback)
 ; Définie APRÈS les includes pour éviter les problèmes
 CreateLockFileOnExit(ExitReason, ExitCode) {
     global addonBaseName
     lockFile := A_Temp . "\PTCGPB_Addon_" . addonBaseName . "_Lock.txt"
-    if (!FileExist(lockFile)) {
+    if (FileExist(lockFile)) {
+        ; Vérifier que le PID correspond avant de supprimer
+        FileRead, lockPID, %lockFile%
         currentPID := DllCall("GetCurrentProcessId")
-        FileAppend, %currentPID%, %lockFile%
+        if (lockPID = currentPID) {
+            FileDelete, %lockFile%
+        }
     }
 }
 
@@ -30,8 +34,12 @@ SetupOnExit:
 return
 
 OnExitHandler:
-    ; Appeler la fonction de nettoyage
+    ; Nettoyer le lock file
     CreateLockFileOnExit("", "")
+    ; Nettoyer aussi via CleanupAddonLockFile si disponible (depuis Utils.ahk)
+    if (IsFunc("CleanupAddonLockFile")) {
+        CleanupAddonLockFile("", "")
+    }
     ; Ne pas appeler ExitApp ici, car OnExit est déjà en cours d'exécution
 return
 
@@ -867,10 +875,21 @@ SkipLabelsAtStart:
 
 ^+d::
     Gui, Dashboard:Destroy
+    ; Nettoyer le lock file avant de quitter
+    CreateLockFileOnExit("", "")
+    if (IsFunc("CleanupAddonLockFile")) {
+        CleanupAddonLockFile("", "")
+    }
     ExitApp
 return
 
 GuiClose:
+    Gui, Dashboard:Destroy
+    ; Nettoyer le lock file avant de quitter
+    CreateLockFileOnExit("", "")
+    if (IsFunc("CleanupAddonLockFile")) {
+        CleanupAddonLockFile("", "")
+    }
     ExitApp
 return
 

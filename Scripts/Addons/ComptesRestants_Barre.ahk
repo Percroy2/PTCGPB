@@ -49,14 +49,18 @@ if (IsFunc("SetAddonName")) {
 }
 OutputDebug, [ComptesRestants_Barre] Apres SetAddonName
 
-; Fonction pour créer le lock file à la sortie (fallback)
+; Fonction pour nettoyer le lock file à la sortie (fallback)
 ; Définie APRÈS les includes pour éviter les problèmes
 CreateLockFileOnExit(ExitReason, ExitCode) {
     global addonBaseName
     lockFile := A_Temp . "\PTCGPB_Addon_" . addonBaseName . "_Lock.txt"
-    if (!FileExist(lockFile)) {
+    if (FileExist(lockFile)) {
+        ; Vérifier que le PID correspond avant de supprimer
+        FileRead, lockPID, %lockFile%
         currentPID := DllCall("GetCurrentProcessId")
-        FileAppend, %currentPID%, %lockFile%
+        if (lockPID = currentPID) {
+            FileDelete, %lockFile%
+        }
     }
 }
 
@@ -72,6 +76,8 @@ goto SkipSetupOnExitLabel
 
 SetupOnExit:
     ; Configurer OnExit après que tout soit chargé
+    ; Note: SetAddonName a déjà configuré OnExit("CleanupAddonLockFile") via CreateAddonLockFile
+    ; On va utiliser notre propre handler qui appelle aussi CleanupAddonLockFile
     OutputDebug, [ComptesRestants_Barre] SetupOnExit - Label declenche
     OnExit, OnExitHandler
     OutputDebug, [ComptesRestants_Barre] SetupOnExit - OnExit configure
@@ -654,20 +660,44 @@ SkipLabelsAtStart:
 OutputDebug, [ComptesRestants_Barre] Apres les labels, script pret
 
 ^+x::
+    global barsCreated
+    ; Nettoyer les barres GUI
     for instanceName in barsCreated {
         guiName := "AddonBar_" . instanceName
         Gui, %guiName%:Destroy
     }
+    ; Nettoyer le lock file avant de quitter
+    CreateLockFileOnExit("", "")
     ExitApp
 return
 
 GuiClose:
+    global barsCreated
+    ; Nettoyer les barres GUI
+    for instanceName in barsCreated {
+        guiName := "AddonBar_" . instanceName
+        Gui, %guiName%:Destroy
+    }
+    ; Nettoyer le lock file avant de quitter
+    CreateLockFileOnExit("", "")
     ExitApp
 return
 
 OnExitHandler:
-    ; Appeler la fonction de nettoyage
+    global barsCreated, addonBaseName
+    ; Nettoyer les barres GUI
+    if (IsObject(barsCreated)) {
+        for instanceName in barsCreated {
+            guiName := "AddonBar_" . instanceName
+            Gui, %guiName%:Destroy
+        }
+    }
+    ; Appeler la fonction de nettoyage du lock file
     CreateLockFileOnExit("", "")
+    ; Nettoyer aussi via CleanupAddonLockFile si disponible (depuis Utils.ahk)
+    if (IsFunc("CleanupAddonLockFile")) {
+        CleanupAddonLockFile("", "")
+    }
     ; Ne pas appeler ExitApp ici, car OnExit est déjà en cours d'exécution
 return
 

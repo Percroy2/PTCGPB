@@ -2108,6 +2108,11 @@ CreateDefaultSettingsFile() {
       iniContent .= "menuExpanded=True`n"
       iniContent .= "groupRerollEnabled=0`n"
       iniContent .= "checkWPthanks=0`n"
+      iniContent .= "`n[Addons]`n"
+      iniContent .= "autoLoadAddons=1`n"
+      iniContent .= "addonsLaunchDelay=500`n"
+      iniContent .= "addonsEnabled=`n"
+      iniContent .= "addonsDisabled=`n"
       
       FileAppend, %iniContent%, Settings.ini, UTF-16
       return true
@@ -2326,6 +2331,20 @@ SaveAllSettings() {
    iniContent_Second .= "minStarsShiny=" minStarsShiny "`n"
    iniContent_Second .= "tesseractPath=" tesseractPath "`n"
    
+   ; Lire les valeurs de la section Addons avant de réécrire (pour les préserver)
+   settingsPath := A_ScriptDir . "\Settings.ini"
+   IniRead, autoLoadAddons, %settingsPath%, Addons, autoLoadAddons, 1
+   IniRead, addonsLaunchDelay, %settingsPath%, Addons, addonsLaunchDelay, 500
+   IniRead, addonsEnabled, %settingsPath%, Addons, addonsEnabled, 
+   IniRead, addonsDisabled, %settingsPath%, Addons, addonsDisabled, 
+   
+   ; Ajouter la section Addons
+   iniContent_Second .= "`n[Addons]`n"
+   iniContent_Second .= "autoLoadAddons=" autoLoadAddons "`n"
+   iniContent_Second .= "addonsLaunchDelay=" addonsLaunchDelay "`n"
+   iniContent_Second .= "addonsEnabled=" addonsEnabled "`n"
+   iniContent_Second .= "addonsDisabled=" addonsDisabled "`n"
+   
    iniFull := iniContent . iniContent_Second
    FileDelete, Settings.ini
    FileAppend, %iniFull%, Settings.ini, UTF-16
@@ -2352,6 +2371,497 @@ ResetAccountLists() {
       if (debugMode) {
          MsgBox, 0x40000, Reset list issue, ResetLists.ahk not found at:`n%resetListsPath%
       }
+   }
+}
+
+; ========================================
+; SYSTÈME DE GESTION DES ADDONS
+; ========================================
+
+; Retourne la liste des addons disponibles dans Scripts\Addons
+GetAddonList() {
+   addonsDir := A_ScriptDir . "\Scripts\Addons"
+   addonsList := []
+   
+   LogToFile("[Addons] Recherche des addons dans: " . addonsDir, "Addons_Launch.log")
+   
+   if (!FileExist(addonsDir)) {
+      LogToFile("[Addons] ERREUR: Dossier Addons introuvable: " . addonsDir, "Addons_Launch.log")
+      return addonsList
+   }
+   
+   fileCount := 0
+   Loop, Files, %addonsDir%\*.ahk
+   {
+      fileName := A_LoopFileName
+      fileCount++
+      LogToFile("[Addons] Fichier trouvé: " . fileName, "Addons_Launch.log")
+      
+      ; Exclure Utils.ahk et autres fichiers non-addons
+      if (fileName != "Utils.ahk") {
+         addonsList.Push(fileName)
+         LogToFile("[Addons] Addon ajouté à la liste: " . fileName, "Addons_Launch.log")
+      } else {
+         LogToFile("[Addons] Fichier exclu (Utils.ahk): " . fileName, "Addons_Launch.log")
+      }
+   }
+   
+   LogToFile("[Addons] Total fichiers .ahk trouvés: " . fileCount . ", Addons valides: " . addonsList.Length(), "Addons_Launch.log")
+   
+   return addonsList
+}
+
+; Vérifie si un addon est actif (lock file + PID valide)
+IsAddonRunning(addonName) {
+   ; Extraire le nom de base (sans extension)
+   addonBaseName := StrReplace(addonName, ".ahk", "")
+   
+   ; Chemin du fichier de verrouillage
+   lockFile := A_Temp . "\PTCGPB_Addon_" . addonBaseName . "_Lock.txt"
+   
+   ; Vérifier si le lock file existe
+   if (!FileExist(lockFile)) {
+      return false
+   }
+   
+   ; Lire le PID depuis le lock file
+   FileRead, lockPID, %lockFile%
+   if (ErrorLevel || !lockPID) {
+      return false
+   }
+   
+   ; Vérifier que le processus existe toujours
+   Process, Exist, %lockPID%
+   if (ErrorLevel = 0) {
+      ; Processus mort, lock file orphelin
+      FileDelete, %lockFile%
+      return false
+   }
+   
+   ; Vérifier que c'est bien un processus AutoHotkey
+   WinGet, processName, ProcessName, ahk_pid %lockPID%
+   if (ErrorLevel = 0 && processName != "") {
+      if (processName != "AutoHotkey.exe" && processName != "AutoHotkeyU64.exe" && processName != "AutoHotkeyU32.exe") {
+         ; Pas un processus AutoHotkey, lock file invalide
+         return false
+      }
+   }
+   
+   return true
+}
+
+; Tue un addon spécifique (pour cleanup)
+KillAddon(addonName) {
+   ; Extraire le nom de base (sans extension)
+   addonBaseName := StrReplace(addonName, ".ahk", "")
+   
+   ; Chemin du fichier de verrouillage
+   lockFile := A_Temp . "\PTCGPB_Addon_" . addonBaseName . "_Lock.txt"
+   
+   if (!FileExist(lockFile)) {
+      return false
+   }
+   
+   ; Lire le PID depuis le lock file
+   FileRead, lockPID, %lockFile%
+   if (ErrorLevel || !lockPID) {
+      FileDelete, %lockFile%
+      return false
+   }
+   
+   ; Vérifier que le processus existe
+   Process, Exist, %lockPID%
+   if (ErrorLevel > 0) {
+      ; Tuer le processus
+      Process, Close, %lockPID%
+      Sleep, 500
+      
+      ; Vérifier qu'il est bien mort
+      Process, Exist, %lockPID%
+      if (ErrorLevel = 0) {
+         FileDelete, %lockFile%
+         LogToFile("[Addons] Addon " . addonName . " (PID: " . lockPID . ") arrêté avec succès", "Addons_Launch.log")
+         return true
+      }
+   }
+   
+   ; Processus déjà mort, nettoyer le lock file
+   FileDelete, %lockFile%
+   return false
+}
+
+; Charge et lance tous les addons disponibles
+LoadAddons() {
+   global debugMode
+   
+   ; Log de démarrage
+   LogToFile("[Addons] LoadAddons() appelé - Début du chargement", "Addons_Launch.log")
+   
+   ; Chemin complet vers Settings.ini
+   settingsPath := A_ScriptDir . "\Settings.ini"
+   
+   ; Vérifier que Settings.ini existe
+   if (!FileExist(settingsPath)) {
+      LogToFile("[Addons] ERREUR: Settings.ini introuvable: " . settingsPath, "Addons_Launch.log")
+      return
+   }
+   
+   ; Lire la configuration
+   IniRead, autoLoadAddons, %settingsPath%, Addons, autoLoadAddons, 1
+   LogToFile("[Addons] Configuration lue - autoLoadAddons: " . autoLoadAddons, "Addons_Launch.log")
+   
+   if (autoLoadAddons != "1" && autoLoadAddons != "true") {
+      LogToFile("[Addons] Chargement automatique des addons désactivé", "Addons_Launch.log")
+      return
+   }
+   
+   IniRead, addonsLaunchDelay, %settingsPath%, Addons, addonsLaunchDelay, 500
+   IniRead, addonsEnabled, %settingsPath%, Addons, addonsEnabled, 
+   IniRead, addonsDisabled, %settingsPath%, Addons, addonsDisabled,
+   
+   ; Nettoyer les valeurs (gérer les cas "ERROR" ou valeurs vides)
+   if (addonsEnabled = "ERROR" || addonsEnabled = "") {
+      addonsEnabled := ""
+   }
+   if (addonsDisabled = "ERROR" || addonsDisabled = "") {
+      addonsDisabled := ""
+   }
+   
+   LogToFile("[Addons] Configuration - addonsEnabled: '" . addonsEnabled . "', addonsDisabled: '" . addonsDisabled . "'", "Addons_Launch.log") 
+   
+   ; Convertir les listes en tableaux
+   enabledList := []
+   disabledList := []
+   
+   if (addonsEnabled != "") {
+      Loop, Parse, addonsEnabled, `,
+      {
+         addonName := Trim(A_LoopField)
+         if (addonName != "") {
+            ; Ajouter .ahk si pas présent
+            if (!InStr(addonName, ".ahk")) {
+               addonName := addonName . ".ahk"
+            }
+            enabledList.Push(addonName)
+         }
+      }
+   }
+   
+   if (addonsDisabled != "") {
+      Loop, Parse, addonsDisabled, `,
+      {
+         addonName := Trim(A_LoopField)
+         if (addonName != "") {
+            ; Ajouter .ahk si pas présent
+            if (!InStr(addonName, ".ahk")) {
+               addonName := addonName . ".ahk"
+            }
+            disabledList.Push(addonName)
+         }
+      }
+   }
+   
+   ; Obtenir la liste des addons disponibles
+   addonsList := GetAddonList()
+   
+   if (addonsList.Length() = 0) {
+      LogToFile("[Addons] Aucun addon trouvé dans Scripts\Addons", "Addons_Launch.log")
+      return
+   }
+   
+   LogToFile("[Addons] Début du chargement des addons (" . addonsList.Length() . " trouvés)", "Addons_Launch.log")
+   
+   launchedCount := 0
+   skippedCount := 0
+   errorCount := 0
+   
+   ; Parcourir chaque addon
+   for index, addonName in addonsList {
+      ; Vérifier si l'addon est dans la liste disabled
+      isDisabled := false
+      for idx, disabledAddon in disabledList {
+         if (addonName = disabledAddon) {
+            isDisabled := true
+            break
+         }
+      }
+      
+      if (isDisabled) {
+         LogToFile("[Addons] Addon " . addonName . " ignoré (désactivé dans Settings.ini)", "Addons_Launch.log")
+         skippedCount++
+         continue
+      }
+      
+      ; Vérifier si une liste enabled existe et si l'addon n'y est pas
+      ; Si enabledList est vide, tous les addons sont autorisés
+      if (enabledList.Length() > 0) {
+         isEnabled := false
+         for idx, enabledAddon in enabledList {
+            if (addonName = enabledAddon) {
+               isEnabled := true
+               break
+            }
+         }
+         
+         if (!isEnabled) {
+            LogToFile("[Addons] Addon " . addonName . " ignoré (non dans la liste enabled)", "Addons_Launch.log")
+            skippedCount++
+            continue
+         }
+      }
+      ; Si enabledList est vide, on continue (tous les addons sont autorisés)
+      
+      ; Vérifier si l'addon est déjà en cours d'exécution
+      if (IsAddonRunning(addonName)) {
+         LogToFile("[Addons] Addon " . addonName . " déjà en cours d'exécution, ignoré", "Addons_Launch.log")
+         skippedCount++
+         continue
+      }
+      
+      ; Chemin complet de l'addon
+      addonPath := A_ScriptDir . "\Scripts\Addons\" . addonName
+      
+      ; Validation du fichier
+      if (!FileExist(addonPath)) {
+         LogToFile("[Addons] ERREUR: Fichier addon introuvable: " . addonPath, "Addons_Launch.log")
+         errorCount++
+         continue
+      }
+      
+      ; Vérifier la taille du fichier (éviter fichiers vides)
+      FileGetSize, fileSize, %addonPath%
+      if (fileSize < 100) {
+         LogToFile("[Addons] ERREUR: Fichier addon trop petit (possiblement corrompu): " . addonName . " (" . fileSize . " bytes)", "Addons_Launch.log")
+         errorCount++
+         continue
+      }
+      
+      ; Lancer l'addon
+      try {
+         ; Utiliser A_AhkPath si disponible, sinon laisser Windows gérer l'association
+         ; Ne pas utiliser Hide pour voir les erreurs potentielles
+         if (A_AhkPath != "") {
+            Run, "%A_AhkPath%" "%addonPath%",, UseErrorLevel, addonPID
+         } else {
+            Run, %addonPath%,, UseErrorLevel, addonPID
+         }
+         
+         LogToFile("[Addons] Commande de lancement exécutée pour " . addonName . " (ErrorLevel: " . ErrorLevel . ", PID: " . addonPID . ")", "Addons_Launch.log")
+         
+         if (ErrorLevel) {
+            LogToFile("[Addons] ERREUR: Impossible de lancer " . addonName . " (ErrorLevel: " . ErrorLevel . ")", "Addons_Launch.log")
+            errorCount++
+            continue
+         }
+         
+         ; Vérifier que le processus a bien démarré
+         if (addonPID) {
+            LogToFile("[Addons] Processus " . addonName . " démarré avec PID: " . addonPID, "Addons_Launch.log")
+            ; Vérifier que le processus existe toujours après 1 seconde
+            Sleep, 1000
+            Process, Exist, %addonPID%
+            if (ErrorLevel = 0) {
+               LogToFile("[Addons] ATTENTION: Processus " . addonName . " (PID: " . addonPID . ") s'est arrêté immédiatement après le démarrage", "Addons_Launch.log")
+            }
+         } else {
+            LogToFile("[Addons] ATTENTION: Aucun PID retourné pour " . addonName, "Addons_Launch.log")
+         }
+         
+         ; Attendre un peu pour que le processus démarre
+         Sleep, 2000
+         
+         ; Vérifier que l'addon a bien démarré (vérifier le lock file)
+         maxWait := 10  ; 10 secondes max (augmenté pour laisser plus de temps)
+         waitCount := 0
+         started := false
+         
+         ; Vérifier le lock file directement pour plus de détails
+         addonBaseName := StrReplace(addonName, ".ahk", "")
+         lockFile := A_Temp . "\PTCGPB_Addon_" . addonBaseName . "_Lock.txt"
+         
+         while (waitCount < maxWait) {
+            ; Vérifier si le lock file existe
+            if (FileExist(lockFile)) {
+               FileRead, lockPID, %lockFile%
+               if (lockPID) {
+                  ; Vérifier que le processus existe
+                  Process, Exist, %lockPID%
+                  if (ErrorLevel > 0) {
+                     started := true
+                     LogToFile("[Addons] Addon " . addonName . " lancé avec succès (PID: " . lockPID . ")", "Addons_Launch.log")
+                     break
+                  } else {
+                     ; Processus mort, lock file orphelin
+                     FileDelete, %lockFile%
+                     LogToFile("[Addons] Lock file orphelin détecté pour " . addonName . ", nettoyage...", "Addons_Launch.log")
+                  }
+               }
+            }
+            
+            Sleep, 1000
+            waitCount++
+            
+            ; Log de progression toutes les 2 secondes
+            if (Mod(waitCount, 2) = 0) {
+               LogToFile("[Addons] En attente du démarrage de " . addonName . " (" . waitCount . "/" . maxWait . " secondes)...", "Addons_Launch.log")
+            }
+         }
+         
+         if (started) {
+            launchedCount++
+         } else {
+            LogToFile("[Addons] ERREUR: Addon " . addonName . " n'a pas démarré dans les temps (timeout après " . maxWait . " secondes)", "Addons_Launch.log")
+            LogToFile("[Addons] DEBUG: Lock file attendu: " . lockFile, "Addons_Launch.log")
+            errorCount++
+         }
+         
+         ; Délai entre chaque lancement
+         if (index < addonsList.Length() && addonsLaunchDelay > 0) {
+            Sleep, %addonsLaunchDelay%
+         }
+         
+      } catch e {
+         LogToFile("[Addons] ERREUR: Exception lors du lancement de " . addonName . ": " . e.Message, "Addons_Launch.log")
+         errorCount++
+      }
+   }
+   
+   ; Résumé
+   LogToFile("[Addons] Chargement terminé - Lancés: " . launchedCount . ", Ignorés: " . skippedCount . ", Erreurs: " . errorCount, "Addons_Launch.log")
+   
+   if (debugMode && errorCount > 0) {
+      CreateStatusMessage("Addons: " . launchedCount . " lancés, " . errorCount . " erreurs",,,, false)
+   }
+}
+
+; Relance les addons qui ont crashé (vérifie les lock files orphelins)
+ReloadAddons() {
+   global debugMode
+   
+   ; Chemin complet vers Settings.ini
+   settingsPath := A_ScriptDir . "\Settings.ini"
+   
+   ; Lire la configuration
+   IniRead, autoLoadAddons, %settingsPath%, Addons, autoLoadAddons, 1
+   if (autoLoadAddons != "1" && autoLoadAddons != "true") {
+      return
+   }
+   
+   IniRead, addonsEnabled, %settingsPath%, Addons, addonsEnabled, 
+   IniRead, addonsDisabled, %settingsPath%, Addons, addonsDisabled, 
+   
+   ; Convertir les listes en tableaux
+   enabledList := []
+   disabledList := []
+   
+   if (addonsEnabled != "") {
+      Loop, Parse, addonsEnabled, `,
+      {
+         addonName := Trim(A_LoopField)
+         if (addonName != "") {
+            if (!InStr(addonName, ".ahk")) {
+               addonName := addonName . ".ahk"
+            }
+            enabledList.Push(addonName)
+         }
+      }
+   }
+   
+   if (addonsDisabled != "") {
+      Loop, Parse, addonsDisabled, `,
+      {
+         addonName := Trim(A_LoopField)
+         if (addonName != "") {
+            if (!InStr(addonName, ".ahk")) {
+               addonName := addonName . ".ahk"
+            }
+            disabledList.Push(addonName)
+         }
+      }
+   }
+   
+   ; Obtenir la liste des addons
+   addonsList := GetAddonList()
+   
+   if (addonsList.Length() = 0) {
+      return
+   }
+   
+   reloadedCount := 0
+   
+   ; Parcourir chaque addon
+   for index, addonName in addonsList {
+      ; Vérifier si l'addon est dans la liste disabled
+      isDisabled := false
+      for idx, disabledAddon in disabledList {
+         if (addonName = disabledAddon) {
+            isDisabled := true
+            break
+         }
+      }
+      
+      if (isDisabled) {
+         continue
+      }
+      
+      ; Vérifier si une liste enabled existe et si l'addon n'y est pas
+      if (enabledList.Length() > 0) {
+         isEnabled := false
+         for idx, enabledAddon in enabledList {
+            if (addonName = enabledAddon) {
+               isEnabled := true
+               break
+            }
+         }
+         
+         if (!isEnabled) {
+            continue
+         }
+      }
+      
+      ; Vérifier si l'addon devrait être actif mais ne l'est pas
+      ; On vérifie le lock file pour voir s'il existe mais que le processus est mort
+      addonBaseName := StrReplace(addonName, ".ahk", "")
+      lockFile := A_Temp . "\PTCGPB_Addon_" . addonBaseName . "_Lock.txt"
+      
+      if (FileExist(lockFile)) {
+         ; Lock file existe, vérifier si le processus est toujours actif
+         FileRead, lockPID, %lockFile%
+         
+         if (lockPID) {
+            Process, Exist, %lockPID%
+            if (ErrorLevel = 0) {
+               ; Processus mort, lock file orphelin - relancer l'addon
+               FileDelete, %lockFile%
+               
+               addonPath := A_ScriptDir . "\Scripts\Addons\" . addonName
+               if (FileExist(addonPath)) {
+                  try {
+                     ; Utiliser A_AhkPath si disponible
+                     if (A_AhkPath != "") {
+                        Run, "%A_AhkPath%" "%addonPath%",, Hide UseErrorLevel
+                     } else {
+                        Run, %addonPath%,, Hide UseErrorLevel
+                     }
+                     
+                     if (!ErrorLevel) {
+                        Sleep, 1000
+                        if (IsAddonRunning(addonName)) {
+                           LogToFile("[Addons] Addon " . addonName . " relancé avec succès (était crashé)", "Addons_Launch.log")
+                           reloadedCount++
+                        }
+                     }
+                  } catch e {
+                     LogToFile("[Addons] ERREUR: Exception lors du relancement de " . addonName . ": " . e.Message, "Addons_Launch.log")
+                  }
+               }
+            }
+         }
+      }
+   }
+   
+   if (reloadedCount > 0) {
+      LogToFile("[Addons] Reload terminé - " . reloadedCount . " addon(s) relancé(s)", "Addons_Launch.log")
    }
 }
 
@@ -2470,6 +2980,9 @@ StartBot() {
          Run, %monitorFile%
       }
    }
+   
+   ; Charger les addons automatiquement
+   LoadAddons()
    
    SelectedMonitorIndex := RegExReplace(SelectedMonitorIndex, ":.*$")
    SysGet, Monitor, Monitor, %SelectedMonitorIndex%

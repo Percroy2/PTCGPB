@@ -212,7 +212,7 @@ ShowToastNotification(title, message, priority) {
 }
 
 ; Timer pour fermer les notifications expirées
-goto SkipCloseNotificationsTimerLabel
+goto SkipInitNotificationManagerTimerLabel
 
 CloseNotificationsTimer:
     global NotificationTimers
@@ -266,8 +266,6 @@ CloseNotificationsTimer:
         SetTimer, CloseNotificationsTimer, Off
     }
 return
-
-SkipCloseNotificationsTimerLabel:
 
 ; Envoyer une notification Discord
 SendDiscordNotification(title, message, priority) {

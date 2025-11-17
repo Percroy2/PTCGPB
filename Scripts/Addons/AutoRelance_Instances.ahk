@@ -8,16 +8,21 @@ currentPID := DllCall("GetCurrentProcessId")
 FileDelete, %lockFile%
 FileAppend, %currentPID%, %lockFile%
 
-; Configurer OnExit pour créer le lock file même si le script s'arrête
-OnExit("CreateLockFileOnExit")
-
-; Fonction pour créer le lock file à la sortie (fallback)
+; Fonction pour nettoyer le lock file à la sortie (fallback)
 CreateLockFileOnExit(ExitReason, ExitCode) {
     global addonBaseName
     lockFile := A_Temp . "\PTCGPB_Addon_" . addonBaseName . "_Lock.txt"
-    if (!FileExist(lockFile)) {
+    if (FileExist(lockFile)) {
+        ; Vérifier que le PID correspond avant de supprimer
+        FileRead, lockPID, %lockFile%
         currentPID := DllCall("GetCurrentProcessId")
-        FileAppend, %currentPID%, %lockFile%
+        if (lockPID = currentPID) {
+            FileDelete, %lockFile%
+        }
+    }
+    ; Nettoyer aussi via CleanupAddonLockFile si disponible (depuis Utils.ahk)
+    if (IsFunc("CleanupAddonLockFile")) {
+        CleanupAddonLockFile("", "")
     }
 }
 
@@ -725,5 +730,13 @@ return
 ^+x::
     DebugLog("Hotkey Ctrl+Shift+X - Arret de l'addon")
     SetTimer, CheckInstancesTimer, Off
+    ; Nettoyer le lock file avant de quitter
+    CreateLockFileOnExit("", "")
+    ExitApp
+return
+
+GuiClose:
+    ; Nettoyer le lock file avant de quitter
+    CreateLockFileOnExit("", "")
     ExitApp
 return
