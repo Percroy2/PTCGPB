@@ -69,6 +69,7 @@ DownloadFile(url, filename) {
     if(!errored) {
         FileDelete, %localPath%
         FileAppend, %ids%, %localPath%
+        return true
     }
     return !errored
 }

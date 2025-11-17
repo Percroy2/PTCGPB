@@ -490,7 +490,7 @@ if(DeadCheck = 1 && deleteMethod != "Create Bots (13P)") {
             }
         }
 
-        Sleep, 7000 ; avoiding spam clicks at startup
+        Sleep, 4000 ; avoiding spam clicks at startup
         FindImageAndClick(25, 145, 70, 170, , "speedmodMenu", 18, 109, 2000) ; click mod settings
         if(setSpeed = 3)
             FindImageAndClick(182, 170, 194, 190, , "Three", 187, 180) ; click mod settings
@@ -3295,18 +3295,20 @@ SelectPack(HG := false) {
             }
         }
 
-        if (openPack == "MegaGyarados" || openPack == "MegaBlaziken" || openPack == "MegaAltaria") { ; No swipe, inital screen
+         if (openPack == "MegaGyarados" || openPack == "MegaBlaziken" || openPack == "MegaAltaria") { ; No swipe, inital screen
             if (openPack == "MegaGyarados") {
                 packy := SelectExpansionFirstRowY
-                packx := SelectExpansionLeftColumnMiddleX + 3PackExpansionLeft
+                ; packx := SelectExpansionLeftColumnMiddleX + 3PackExpansionLeft
+                packx := 18 ; custom location to avoid accidentally rotating through pack wheel on following screen
             } else if (openPack == "MegaBlaziken") {
                 packy := SelectExpansionFirstRowY
                 packx := SelectExpansionLeftColumnMiddleX
             } else if (openPack == "MegaAltaria") {
                 packy := SelectExpansionFirstRowY
                 packx := SelectExpansionLeftColumnMiddleX + 3PackExpansionRight
-            }
+            } 
         }
+
         FindImageAndClick(233, 400, 264, 428, , "Points", packx, packy)
     
         if(openPack = "Lunala") {
@@ -3965,7 +3967,7 @@ GetEventRewards(frommain := true){
         failSafeTime := (A_TickCount - failSafe) // 1000
     }
 
-    ;====== Click through missions menus ======
+/*     ;====== Click through missions menus ======
     ; pick ONE of these click locations based upon which events are currently going on.
     ; adbClick_wbb(120, 465) ; used to click the middle mission button
     ; adbClick_wbb(25, 465) ;used to click the left-most mission button
@@ -4002,6 +4004,7 @@ GetEventRewards(frommain := true){
         }
         failSafeTime := (A_TickCount - failSafe) // 1000
     }
+*/
 
     GoToMain()
 }
