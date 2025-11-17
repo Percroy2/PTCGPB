@@ -113,7 +113,7 @@ githubUser := "kevnITG"
    ,intro := "Mega Rising"
 
 global GUI_WIDTH := 790
-global GUI_HEIGHT := 370
+global GUI_HEIGHT := 410
 global MainGuiName
 global MuMuv5
 
@@ -305,15 +305,23 @@ NextStep:
 
    UpdateGroupRerollButtonText()
 
+   sectionColor := "c00CED1"
+   Gui, Font, s10 cWhite, Segoe UI
+   Gui, Add, GroupBox, x255 y250 w180 h50 %sectionColor%, Image Search Optimization
+
+   Gui, Add, Button, x275 y270 w140 h25 gShowImageSearchOptimization vImageSearchOptimizationButton BackgroundTrans, Loading...
+
+   UpdateImageSearchOptimizationButtonText()
+
    Gui, Font, s10 cWhite, Segoe UI
    sectionColor := "c9370DB"
-   Gui, Add, GroupBox, x255 y260 w180 h100 %sectionColor%, % currentDictionary.TimeSettings
-   Gui, Add, Text, x270 y285 %sectionColor%, % currentDictionary.Txt_Delay
-   Gui, Add, Edit, vDelay w30 x400 y285 h20 -E0x200 Background2A2A2A cWhite Center, %Delay%
-   Gui, Add, Text, x270 y310 %sectionColor%, % currentDictionary.Txt_SwipeSpeed
-   Gui, Add, Edit, vswipeSpeed w30 x400 y310 h20 -E0x200 Background2A2A2A cWhite Center, %swipeSpeed%
-   Gui, Add, Text, x270 y335 %sectionColor%, % currentDictionary.Txt_WaitTime
-   Gui, Add, Edit, vwaitTime w30 x400 y335 h20 -E0x200 Background2A2A2A cWhite Center, %waitTime%
+   Gui, Add, GroupBox, x255 y305 w180 h100 %sectionColor%, % currentDictionary.TimeSettings
+   Gui, Add, Text, x270 y330 %sectionColor%, % currentDictionary.Txt_Delay
+   Gui, Add, Edit, vDelay w30 x400 y330 h20 -E0x200 Background2A2A2A cWhite Center, %Delay%
+   Gui, Add, Text, x270 y355 %sectionColor%, % currentDictionary.Txt_SwipeSpeed
+   Gui, Add, Edit, vswipeSpeed w30 x400 y355 h20 -E0x200 Background2A2A2A cWhite Center, %swipeSpeed%
+   Gui, Add, Text, x270 y380 %sectionColor%, % currentDictionary.Txt_WaitTime
+   Gui, Add, Edit, vwaitTime w30 x400 y380 h20 -E0x200 Background2A2A2A cWhite Center, %waitTime%
 
    sectionColor := "cFF69B4"
    Gui, Font, s10 cWhite, Segoe UI
@@ -360,7 +368,7 @@ NextStep:
    Gui, Add, Picture, gShowToolsAndSystemSettings x555 y322 w32 h32, %A_ScriptDir%\GUI\Images\tools-icon.png
 
    sectionColor := "cWhite"
-   Gui, Add, GroupBox, x611 y0 w175 h360 %sectionColor%
+   Gui, Add, GroupBox, x611 y0 w175 h400 %sectionColor%
 
    Gui, Font, s12 cWhite Bold
    Gui, Add, Text, x621 y20 w155 h50 Left BackgroundTrans cWhite, % currentDictionary.title_main
@@ -859,6 +867,102 @@ return
 
 CancelGroupRerollSettings:
     Gui, GroupRerollSelect:Destroy
+return
+
+UpdateImageSearchOptimizationButtonText() {
+    global ImageSearchCacheEnabled, ImageSearchFastMode, ImageSearchPerformanceLogging
+    global ImageSearchCacheTTL, ImageSearchScalePercent
+    
+    statusText := ""
+    
+    if (ImageSearchCacheEnabled) {
+        statusText .= "Cache: ON"
+        if (ImageSearchFastMode)
+            statusText .= " | Fast: ON"
+        if (ImageSearchPerformanceLogging)
+            statusText .= " | Log: ON"
+    } else {
+        statusText := "Cache: OFF"
+    }
+    
+    if (statusText = "")
+        statusText := "Configure..."
+    
+    Gui, Font, s7 cLime, Segoe UI
+    GuiControl, Font, ImageSearchOptimizationButton
+    GuiControl,, ImageSearchOptimizationButton, %statusText%
+}
+
+ShowImageSearchOptimization:
+    WinGetPos, mainWinX, mainWinY, mainWinW, mainWinH, A
+    
+    buttonCenterX := 345
+    popupWidth := 280
+    popupX := mainWinX + buttonCenterX - (popupWidth / 2)
+    popupY := mainWinY + 238 + 30
+    
+    Gui, ImageSearchOptimization:Destroy
+    Gui, ImageSearchOptimization:New, +ToolWindow -MaximizeBox -MinimizeBox +LastFound, Image Search Optimization Settings
+    Gui, ImageSearchOptimization:Color, 1E1E1E, 333333
+    Gui, ImageSearchOptimization:Font, s10 cWhite, Segoe UI
+    
+    yPos := 15
+    
+    Gui, ImageSearchOptimization:Add, Checkbox, % (ImageSearchCacheEnabled ? "Checked" : "") " vImageSearchCacheEnabled_Popup x15 y" . yPos . " cWhite", Enable Image Search Cache
+    yPos += 30
+    
+    Gui, ImageSearchOptimization:Add, Text, x15 y%yPos% cWhite, Cache TTL (ms):
+    Gui, ImageSearchOptimization:Add, Edit, vImageSearchCacheTTL_Popup w60 x200 y%yPos% h20 -E0x200 Background2A2A2A cWhite Center, %ImageSearchCacheTTL%
+    yPos += 30
+    
+    Gui, ImageSearchOptimization:Add, Checkbox, % (ImageSearchFastMode ? "Checked" : "") " vImageSearchFastMode_Popup x15 y" . yPos . " cWhite", Enable Fast Mode (Reduced Resolution)
+    yPos += 30
+    
+    Gui, ImageSearchOptimization:Add, Text, x15 y%yPos% cWhite, Scale Percent (1-100):
+    Gui, ImageSearchOptimization:Add, Edit, vImageSearchScalePercent_Popup w60 x200 y%yPos% h20 -E0x200 Background2A2A2A cWhite Center, %ImageSearchScalePercent%
+    yPos += 30
+    
+    Gui, ImageSearchOptimization:Add, Checkbox, % (ImageSearchPerformanceLogging ? "Checked" : "") " vImageSearchPerformanceLogging_Popup x15 y" . yPos . " cWhite", Enable Performance Logging
+    yPos += 40
+    
+    Gui, ImageSearchOptimization:Add, Button, x15 y%yPos% w120 h30 gApplyImageSearchOptimization, Apply
+    Gui, ImageSearchOptimization:Add, Button, x145 y%yPos% w120 h30 gCancelImageSearchOptimization, Cancel
+    yPos += 40
+    
+    Gui, ImageSearchOptimization:Show, x%popupX% y%popupY% w280 h%yPos%
+return
+
+ApplyImageSearchOptimization:
+    Gui, ImageSearchOptimization:Submit, NoHide
+    
+    ImageSearchCacheEnabled := ImageSearchCacheEnabled_Popup ? 1 : 0
+    ImageSearchCacheTTL := ImageSearchCacheTTL_Popup
+    ImageSearchFastMode := ImageSearchFastMode_Popup ? 1 : 0
+    ImageSearchScalePercent := ImageSearchScalePercent_Popup
+    ImageSearchPerformanceLogging := ImageSearchPerformanceLogging_Popup ? 1 : 0
+    
+    ; Validation
+    if (!IsNumeric(ImageSearchCacheTTL) || ImageSearchCacheTTL < 0)
+        ImageSearchCacheTTL := 100
+    if (!IsNumeric(ImageSearchScalePercent) || ImageSearchScalePercent <= 0 || ImageSearchScalePercent > 100)
+        ImageSearchScalePercent := 50
+    
+    ; Sauvegarder dans Settings.ini
+    IniWrite, %ImageSearchCacheEnabled%, Settings.ini, UserSettings, ImageSearchCacheEnabled
+    IniWrite, %ImageSearchCacheTTL%, Settings.ini, UserSettings, ImageSearchCacheTTL
+    IniWrite, %ImageSearchFastMode%, Settings.ini, UserSettings, ImageSearchFastMode
+    IniWrite, %ImageSearchScalePercent%, Settings.ini, UserSettings, ImageSearchScalePercent
+    IniWrite, %ImageSearchPerformanceLogging%, Settings.ini, UserSettings, ImageSearchPerformanceLogging
+    
+    Gui, ImageSearchOptimization:Destroy
+    
+    Gui, 1:Default
+    
+    UpdateImageSearchOptimizationButtonText()
+return
+
+CancelImageSearchOptimization:
+    Gui, ImageSearchOptimization:Destroy
 return
 
 UpdateS4TButtonText() {
@@ -2029,6 +2133,13 @@ LoadSettingsFromIni() {
       IniRead, ImageSearchScalePercent, Settings.ini, UserSettings, ImageSearchScalePercent, 50
       IniRead, ImageSearchPerformanceLogging, Settings.ini, UserSettings, ImageSearchPerformanceLogging, 0
       
+      ; Convertir en nombres pour éviter les problèmes de type
+      ImageSearchCacheEnabled := ImageSearchCacheEnabled + 0
+      ImageSearchCacheTTL := ImageSearchCacheTTL + 0
+      ImageSearchFastMode := ImageSearchFastMode + 0
+      ImageSearchScalePercent := ImageSearchScalePercent + 0
+      ImageSearchPerformanceLogging := ImageSearchPerformanceLogging + 0
+      
       if (!IsNumeric(Instances))
          Instances := 1
       if (!IsNumeric(Columns) || Columns < 1)
@@ -2041,15 +2152,16 @@ LoadSettingsFromIni() {
          s4tWPMinCards := 1
       
       ; Validation des paramètres d'optimisation de la détection d'images
-      if (!IsNumeric(ImageSearchCacheTTL) || ImageSearchCacheTTL < 0)
+      ; Gérer le cas où IniRead retourne "ERROR" (clé absente)
+      if (ImageSearchCacheTTL = "ERROR" || !IsNumeric(ImageSearchCacheTTL) || ImageSearchCacheTTL < 0)
          ImageSearchCacheTTL := 100
-      if (!IsNumeric(ImageSearchScalePercent) || ImageSearchScalePercent <= 0 || ImageSearchScalePercent > 100)
+      if (ImageSearchScalePercent = "ERROR" || !IsNumeric(ImageSearchScalePercent) || ImageSearchScalePercent <= 0 || ImageSearchScalePercent > 100)
          ImageSearchScalePercent := 50
-      if (ImageSearchCacheEnabled != 0 && ImageSearchCacheEnabled != 1)
+      if (ImageSearchCacheEnabled = "ERROR" || (ImageSearchCacheEnabled != 0 && ImageSearchCacheEnabled != 1))
          ImageSearchCacheEnabled := 1
-      if (ImageSearchFastMode != 0 && ImageSearchFastMode != 1)
+      if (ImageSearchFastMode = "ERROR" || (ImageSearchFastMode != 0 && ImageSearchFastMode != 1))
          ImageSearchFastMode := 1
-      if (ImageSearchPerformanceLogging != 0 && ImageSearchPerformanceLogging != 1)
+      if (ImageSearchPerformanceLogging = "ERROR" || (ImageSearchPerformanceLogging != 0 && ImageSearchPerformanceLogging != 1))
          ImageSearchPerformanceLogging := 0
          
       validMethods := "Create Bots (13P)|Inject 13P+|Inject Wonderpick 96P+"
@@ -2127,6 +2239,11 @@ CreateDefaultSettingsFile() {
       iniContent .= "menuExpanded=True`n"
       iniContent .= "groupRerollEnabled=0`n"
       iniContent .= "checkWPthanks=0`n"
+      iniContent .= "ImageSearchCacheEnabled=1`n"
+      iniContent .= "ImageSearchCacheTTL=100`n"
+      iniContent .= "ImageSearchFastMode=1`n"
+      iniContent .= "ImageSearchScalePercent=50`n"
+      iniContent .= "ImageSearchPerformanceLogging=0`n"
       iniContent .= "`n[Addons]`n"
       iniContent .= "autoLoadAddons=1`n"
       iniContent .= "addonsLaunchDelay=500`n"
@@ -2166,6 +2283,7 @@ SaveAllSettings() {
    global menuExpanded
    global claimSpecialMissions, claimDailyMission, wonderpickForEventMissions
    global checkWPthanks
+   global ImageSearchCacheEnabled, ImageSearchCacheTTL, ImageSearchFastMode, ImageSearchScalePercent, ImageSearchPerformanceLogging
 
    if (deleteMethod != "Inject Wonderpick 96P+") {
        packMethod := false
@@ -2345,6 +2463,11 @@ SaveAllSettings() {
    iniContent_Second .= "minStarsMegaBlaziken=" minStarsMegaBlaziken "`n"
    iniContent_Second .= "minStarsMegaMegaAltaria=" minStarsMegaAltaria "`n"
    iniContent_Second .= "s4tWPMinCards=" s4tWPMinCards "`n"
+   iniContent_Second .= "ImageSearchCacheEnabled=" ImageSearchCacheEnabled "`n"
+   iniContent_Second .= "ImageSearchCacheTTL=" ImageSearchCacheTTL "`n"
+   iniContent_Second .= "ImageSearchFastMode=" ImageSearchFastMode "`n"
+   iniContent_Second .= "ImageSearchScalePercent=" ImageSearchScalePercent "`n"
+   iniContent_Second .= "ImageSearchPerformanceLogging=" ImageSearchPerformanceLogging "`n"
    iniContent_Second .= "s4tDiscordUserId=" s4tDiscordUserId "`n"
    iniContent_Second .= "s4tDiscordWebhookURL=" s4tDiscordWebhookURL "`n"
    iniContent_Second .= "minStarsShiny=" minStarsShiny "`n"
