@@ -701,6 +701,88 @@ SumVariablesInJsonFile() {
     return sum
 }
 
+;-------------------------------------------------------------------------------
+; GetWindowBitmapCache - Cache de bitmap de fenêtre avec TTL
+;-------------------------------------------------------------------------------
+GetWindowBitmapCache(hwnd, maxAge := 150) {
+    static WindowBitmapCache := Object()
+    static WindowBitmapTimestamps := Object()
+    static WindowBitmapSizes := Object()
+    
+    ; Vérifier si hwnd est valide
+    if (!hwnd || !WinExist("ahk_id " . hwnd)) {
+        return ""
+    }
+    
+    ; Obtenir les dimensions actuelles de la fenêtre
+    WinGetPos, currentX, currentY, currentW, currentH, ahk_id %hwnd%
+    
+    ; Vérifier si le bitmap est en cache
+    if (WindowBitmapCache.HasKey(hwnd) && WindowBitmapTimestamps.HasKey(hwnd) && WindowBitmapSizes.HasKey(hwnd)) {
+        cacheTime := WindowBitmapTimestamps[hwnd]
+        cacheSize := WindowBitmapSizes[hwnd]
+        cacheAge := A_TickCount - cacheTime
+        
+        ; Vérifier l'âge du cache et si la taille de la fenêtre n'a pas changé
+        if (cacheAge < maxAge && cacheSize.width = currentW && cacheSize.height = currentH) {
+            ; Cache valide, retourner une copie du bitmap (pour éviter les problèmes de disposal)
+            cachedBitmap := WindowBitmapCache[hwnd]
+            return Gdip_CloneBitmapArea(cachedBitmap, 0, 0, currentW, currentH)
+        } else {
+            ; Cache expiré ou fenêtre redimensionnée, libérer l'ancien bitmap
+            cachedBitmap := WindowBitmapCache[hwnd]
+            if (cachedBitmap) {
+                Gdip_DisposeImage(cachedBitmap)
+            }
+            WindowBitmapCache.Delete(hwnd)
+            WindowBitmapTimestamps.Delete(hwnd)
+            WindowBitmapSizes.Delete(hwnd)
+        }
+    }
+    
+    ; Capturer un nouveau bitmap
+    pBitmap := from_window(hwnd)
+    if (!pBitmap) {
+        return ""
+    }
+    
+    ; Mettre en cache
+    WindowBitmapCache[hwnd] := pBitmap
+    WindowBitmapTimestamps[hwnd] := A_TickCount
+    WindowBitmapSizes[hwnd] := {width: currentW, height: currentH}
+    
+    ; Retourner une copie pour éviter les problèmes de disposal
+    return Gdip_CloneBitmapArea(pBitmap, 0, 0, currentW, currentH)
+}
+
+;-------------------------------------------------------------------------------
+; from_window_area - Capture partielle d'une zone spécifique de la fenêtre
+;-------------------------------------------------------------------------------
+from_window_area(hwnd, x, y, w, h) {
+    ; Vérifier si hwnd est valide
+    if (!hwnd || !WinExist("ahk_id " . hwnd)) {
+        return ""
+    }
+    
+    ; Restore the window if minimized! Must be visible for capture.
+    if DllCall("IsIconic", "ptr", hwnd)
+        DllCall("ShowWindow", "ptr", hwnd, "int", 4)
+    
+    ; Capturer toute la fenêtre d'abord
+    fullBitmap := from_window(hwnd)
+    if (!fullBitmap) {
+        return ""
+    }
+    
+    ; Extraire la zone spécifique
+    areaBitmap := Gdip_CloneBitmapArea(fullBitmap, x, y, w, h)
+    
+    ; Libérer le bitmap complet
+    Gdip_DisposeImage(fullBitmap)
+    
+    return areaBitmap
+}
+
 from_window(ByRef image) {
     ; Thanks tic - https://www.autohotkey.com/boards/viewtopic.php?t=6517
 
@@ -788,13 +870,46 @@ bboxAndPause(X1, Y1, X2, Y2, doPause := False) {
 
 GetNeedle(Path) {
     static NeedleBitmaps := Object()
-    if (NeedleBitmaps.HasKey(Path)) {
-        return NeedleBitmaps[Path]
-    } else {
-        pNeedle := Gdip_CreateBitmapFromFile(Path)
-        NeedleBitmaps[Path] := pNeedle
-        return pNeedle
+    static NeedleTimestamps := Object()
+	
+    ; Vérifier si le fichier existe
+    if (!FileExist(Path)) {
+        return ""
     }
+    
+    ; Obtenir le timestamp de modification du fichier
+    FileGetTime, fileTime, %Path%, M
+    
+    ; Vérifier si le bitmap est en cache et si le fichier n'a pas été modifié
+    if (NeedleBitmaps.HasKey(Path) && NeedleTimestamps.HasKey(Path)) {
+        cachedTime := NeedleTimestamps[Path]
+        if (fileTime = cachedTime) {
+            ; Cache valide, retourner le bitmap en cache
+            return NeedleBitmaps[Path]
+        } else {
+            ; Fichier modifié, libérer l'ancien bitmap et invalider le cache
+            cachedNeedle := NeedleBitmaps[Path]
+            if (IsObject(cachedNeedle) && cachedNeedle.HasKey("needle")) {
+                Gdip_DisposeImage(cachedNeedle.needle)
+            } else if (cachedNeedle) {
+                Gdip_DisposeImage(cachedNeedle)
+            }
+            NeedleBitmaps.Delete(Path)
+            NeedleTimestamps.Delete(Path)
+        }
+    }
+    
+    ; Charger le bitmap depuis le fichier
+    pNeedle := Gdip_CreateBitmapFromFile(Path)
+    if (!pNeedle) {
+        return ""
+    }
+    
+    ; Mettre en cache (format simple pour Main.ahk)
+    NeedleBitmaps[Path] := pNeedle
+    NeedleTimestamps[Path] := fileTime
+    
+    return pNeedle
 }
 
 ; ^e::

@@ -147,6 +147,183 @@ Gdip_ImageSearch(pBitmapHaystack,pBitmapNeedle,ByRef OutputList=""
     Return OutputCount
 }
 
+;-------------------------------------------------------------------------------
+; Gdip_ImageSearch_Fast - Recherche d'image avec réduction de résolution pour performance
+;-------------------------------------------------------------------------------
+Gdip_ImageSearch_Fast(pBitmapHaystack, pBitmapNeedle, ByRef OutputList=""
+,OuterX1=0,OuterY1=0,OuterX2=0,OuterY2=0,Variation=0,Trans=""
+,SearchDirection=1,Instances=1,LineDelim="`n",CoordDelim=",",ScalePercent=50) {
+    
+    ; Extraire le bitmap needle si c'est un objet
+    if (IsObject(pBitmapNeedle) && pBitmapNeedle.HasKey("needle")) {
+        actualNeedle := pBitmapNeedle.needle
+    } else {
+        actualNeedle := pBitmapNeedle
+    }
+    
+    ; Validation des paramètres
+    If !( pBitmapHaystack && actualNeedle )
+        Return -1001
+    If Variation not between 0 and 255
+        return -1002
+    If ( ( OuterX1 < 0 ) || ( OuterY1 < 0 ) )
+        return -1003
+    If SearchDirection not between 1 and 8
+        SearchDirection := 1
+    If ( Instances < 0 )
+        Instances := 0
+    If ( ScalePercent <= 0 || ScalePercent > 100 )
+        ScalePercent := 50  ; Valeur par défaut
+    
+    ; Obtenir les dimensions originales
+    Gdip_GetImageDimensions(pBitmapHaystack, origHWidth, origHHeight)
+    Gdip_GetImageDimensions(actualNeedle, origNWidth, origNHeight)
+    
+    ; Calculer les nouvelles dimensions
+    newHWidth := origHWidth * ScalePercent / 100
+    newHHeight := origHHeight * ScalePercent / 100
+    newNWidth := origNWidth * ScalePercent / 100
+    newNHeight := origNHeight * ScalePercent / 100
+    
+    ; Réduire le haystack
+    pScaledHaystack := Gdip_ResizeBitmap(pBitmapHaystack, ScalePercent, 0)
+    if (!pScaledHaystack) {
+        return -1006
+    }
+    
+    ; Réduire le needle
+    pScaledNeedle := Gdip_ResizeBitmap(actualNeedle, ScalePercent, 0)
+    if (!pScaledNeedle) {
+        Gdip_DisposeImage(pScaledHaystack)
+        return -1007
+    }
+    
+    ; Ajuster les coordonnées pour la résolution réduite
+    scaledX1 := OuterX1 * ScalePercent / 100
+    scaledY1 := OuterY1 * ScalePercent / 100
+    scaledX2 := OuterX2 * ScalePercent / 100
+    scaledY2 := OuterY2 * ScalePercent / 100
+    
+    ; Effectuer la recherche sur les bitmaps réduits
+    OutputCount := Gdip_ImageSearch(pScaledHaystack, pScaledNeedle, ScaledOutputList
+    ,scaledX1, scaledY1, scaledX2, scaledY2, Variation, Trans
+    ,SearchDirection, Instances, LineDelim, CoordDelim)
+    
+    ; Libérer les bitmaps réduits
+    Gdip_DisposeImage(pScaledHaystack)
+    Gdip_DisposeImage(pScaledNeedle)
+    
+    ; Si aucun résultat, retourner directement
+    if (OutputCount <= 0) {
+        OutputList := ""
+        return OutputCount
+    }
+    
+    ; Convertir les coordonnées de la résolution réduite vers la résolution originale
+    OutputList := ""
+    Loop, Parse, ScaledOutputList, %LineDelim%
+    {
+        if (A_LoopField = "")
+            continue
+        
+        StringSplit, coords, A_LoopField, %CoordDelim%
+        if (coords0 >= 2) {
+            ; Multiplier par le facteur inverse pour obtenir les coordonnées originales
+            origX := Round(coords1 * 100 / ScalePercent)
+            origY := Round(coords2 * 100 / ScalePercent)
+            
+            if (OutputList != "")
+                OutputList .= LineDelim
+            OutputList .= origX . CoordDelim . origY
+        }
+    }
+    
+    Return OutputCount
+}
+
+;-------------------------------------------------------------------------------
+; Gdip_ImageSearch_Batch - Traite plusieurs recherches en une seule passe
+;-------------------------------------------------------------------------------
+Gdip_ImageSearch_Batch(pBitmapHaystack, needlesArray, zonesArray, ByRef resultsArray) {
+    ; needlesArray : Array d'objets needle (ou de bitmaps)
+    ; zonesArray : Array de zones [x1, y1, x2, y2, variation]
+    ; resultsArray : Array de résultats (sortie)
+    
+    if (!pBitmapHaystack || !IsObject(needlesArray) || !IsObject(zonesArray)) {
+        return -1001
+    }
+    
+    if (needlesArray.Length() != zonesArray.Length()) {
+        return -1002
+    }
+    
+    ; Verrouiller le haystack une seule fois
+    Gdip_GetImageDimensions(pBitmapHaystack, hWidth, hHeight)
+    If Gdip_LockBits(pBitmapHaystack, 0, 0, hWidth, hHeight, hStride, hScan, hBitmapData, 1)
+    OR !(hWidth := NumGet(hBitmapData, 0, "UInt"))
+    OR !(hHeight := NumGet(hBitmapData, 4, "UInt")) {
+        Return -1004
+    }
+    
+    resultsArray := []
+    successCount := 0
+    
+    ; Traiter chaque recherche
+    for index, needle in needlesArray {
+        zone := zonesArray[index]
+        
+        ; Extraire les paramètres de la zone
+        x1 := zone[1]
+        y1 := zone[2]
+        x2 := zone[3]
+        y2 := zone[4]
+        variation := zone.Length() >= 5 ? zone[5] : 0
+        
+        ; Obtenir le bitmap needle
+        if (IsObject(needle) && needle.HasKey("needle")) {
+            pNeedle := needle.needle
+        } else {
+            pNeedle := needle
+        }
+        
+        if (!pNeedle) {
+            resultsArray[index] := -1001
+            continue
+        }
+        
+        ; Verrouiller le needle
+        Gdip_GetImageDimensions(pNeedle, nWidth, nHeight)
+        If Gdip_LockBits(pNeedle, 0, 0, nWidth, nHeight, nStride, nScan, nBitmapData) {
+            resultsArray[index] := -1005
+            continue
+        }
+        
+        ; Ajuster les coordonnées
+        adjX2 := (!x2 ? hWidth-nWidth+1 : x2-nWidth+1)
+        adjY2 := (!y2 ? hHeight-nHeight+1 : y2-nHeight+1)
+        
+        ; Effectuer la recherche
+        OutputList := ""
+        OutputCount := Gdip_MultiLockedBitsSearch(hStride, hScan, hWidth, hHeight
+        , nStride, nScan, nWidth, nHeight, OutputList, x1, y1, adjX2, adjY2
+        , variation, 1, 1, "`n", ",")
+        
+        ; Déverrouiller le needle
+        Gdip_UnlockBits(pNeedle, nBitmapData)
+        
+        ; Stocker le résultat
+        resultsArray[index] := OutputCount
+        if (OutputCount > 0) {
+            successCount++
+        }
+    }
+    
+    ; Déverrouiller le haystack
+    Gdip_UnlockBits(pBitmapHaystack, hBitmapData)
+    
+    return successCount
+}
+
 ;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ;///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

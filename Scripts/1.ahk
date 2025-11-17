@@ -2617,10 +2617,17 @@ bboxAndPause_immage(X1, Y1, X2, Y2, pNeedleObj, vret := False, doPause := False)
 
 Gdip_ImageSearch_wbb(pBitmapHaystack,pNeedle,ByRef OutputList=""
 ,OuterX1=0,OuterY1=0,OuterX2=0,OuterY2=0,Variation=0,Trans=""
-,SearchDirection=1,Instances=1,LineDelim="`n",CoordDelim=",") {
+,SearchDirection=1,Instances=1,LineDelim="`n",CoordDelim=",",UseFastSearch=0,ScalePercent=50) {
     global titleHeight
     yBias := titleHeight - 45
-    vret := Gdip_ImageSearch(pBitmapHaystack,pNeedle.needle,OutputList,OuterX1,OuterY1+yBias,OuterX2,OuterY2+yBias,Variation,Trans,SearchDirection,Instances,LineDelim,CoordDelim)
+    
+    ; Utiliser la recherche rapide si demandée et disponible
+    if (UseFastSearch && IsFunc("Gdip_ImageSearch_Fast")) {
+        vret := Gdip_ImageSearch_Fast(pBitmapHaystack,pNeedle.needle,OutputList,OuterX1,OuterY1+yBias,OuterX2,OuterY2+yBias,Variation,Trans,SearchDirection,Instances,LineDelim,CoordDelim,ScalePercent)
+    } else {
+        vret := Gdip_ImageSearch(pBitmapHaystack,pNeedle.needle,OutputList,OuterX1,OuterY1+yBias,OuterX2,OuterY2+yBias,Variation,Trans,SearchDirection,Instances,LineDelim,CoordDelim)
+    }
+    
     if(dbg_bbox)
         bboxAndPause_immage(OuterX1, OuterY1+yBias, OuterX2, OuterY2+yBias, pNeedle, vret, dbg_bboxNpause)
     return vret
@@ -2628,27 +2635,53 @@ Gdip_ImageSearch_wbb(pBitmapHaystack,pNeedle,ByRef OutputList=""
 
 GetNeedle(Path) {
     static NeedleBitmaps := Object()
+    static NeedleTimestamps := Object()
 	
-    if (NeedleBitmaps.HasKey(Path)) {
-        return NeedleBitmaps[Path]
-    } else {
-        pNeedle := Gdip_CreateBitmapFromFile(Path)
-		needleObj := Object()
-		needleObj.Path := Path
-		pathsplit := StrSplit(Path , "\")
-		needleObj.Name := pathsplit[pathsplit.MaxIndex()]
-		needleObj.needle := pNeedle
-        NeedleBitmaps[Path] := needleObj
-        return needleObj
+    ; Vérifier si le fichier existe
+    if (!FileExist(Path)) {
+        return ""
     }
-		
-    if (NeedleBitmaps.HasKey(Path)) {
-        return NeedleBitmaps[Path]
-    } else {
-        pNeedle := Gdip_CreateBitmapFromFile(Path)
-        NeedleBitmaps[Path] := pNeedle
-        return pNeedle
+    
+    ; Obtenir le timestamp de modification du fichier
+    FileGetTime, fileTime, %Path%, M
+    
+    ; Vérifier si le bitmap est en cache et si le fichier n'a pas été modifié
+    if (NeedleBitmaps.HasKey(Path) && NeedleTimestamps.HasKey(Path)) {
+        cachedTime := NeedleTimestamps[Path]
+        if (fileTime = cachedTime) {
+            ; Cache valide, retourner le bitmap en cache
+            return NeedleBitmaps[Path]
+        } else {
+            ; Fichier modifié, libérer l'ancien bitmap et invalider le cache
+            cachedNeedle := NeedleBitmaps[Path]
+            if (IsObject(cachedNeedle) && cachedNeedle.HasKey("needle")) {
+                Gdip_DisposeImage(cachedNeedle.needle)
+            } else if (cachedNeedle) {
+                Gdip_DisposeImage(cachedNeedle)
+            }
+            NeedleBitmaps.Delete(Path)
+            NeedleTimestamps.Delete(Path)
+        }
     }
+    
+    ; Charger le bitmap depuis le fichier
+    pNeedle := Gdip_CreateBitmapFromFile(Path)
+    if (!pNeedle) {
+        return ""
+    }
+    
+    ; Créer l'objet needle avec métadonnées
+    needleObj := Object()
+    needleObj.Path := Path
+    pathsplit := StrSplit(Path , "\")
+    needleObj.Name := pathsplit[pathsplit.MaxIndex()]
+    needleObj.needle := pNeedle
+    
+    ; Mettre en cache
+    NeedleBitmaps[Path] := needleObj
+    NeedleTimestamps[Path] := fileTime
+    
+    return needleObj
 }
 
 
