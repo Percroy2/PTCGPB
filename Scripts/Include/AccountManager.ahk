@@ -85,7 +85,7 @@ loadAccount() {
 					; account has a pack under test
 
 				}
-				if (accountModifiedTimeDiff >= 24){
+				if (accountModifiedTimeDiff >= 12){
 					if(!InStr(fileLines[1], "T") || accountModifiedTimeDiff >= 5*24) {
 						; otherwise account has a pack under test
 						accountFileName := fileLines[1]
@@ -763,9 +763,9 @@ CreateAccountList(instance) {
         EnvSub, hoursDiff, %timeVar%, Hours
 
         ; Always maintain strict age requirements - never relax them
-        if (hoursDiff < 24) {
+        if (hoursDiff < 12) {
             if (verboseLogging)
-                LogToFile("Skipping account less than 24 hours old: " . A_LoopFileName . " (age: " . hoursDiff . " hours)")
+                LogToFile("Skipping account less than 12h old: " . A_LoopFileName . " (age: " . hoursDiff . " hours)")
             continue
         }
 
@@ -813,7 +813,7 @@ CreateAccountList(instance) {
     if (forceRegeneration) {
         LogToFile("FORCED REGENERATION: Found " . totalEligible . " eligible files + " . totalWFlags . " W flag files (cleared used accounts, maintained strict age requirements)")
     } else {
-        LogToFile("Found " . totalEligible . " eligible files + " . totalWFlags . " W flag files (>= 24 hours old, not recently used, packs: " . minPacks . "-" . maxPacks . ")")
+        LogToFile("Found " . totalEligible . " eligible files + " . totalWFlags . " W flag files (>= 12h old, not recently used, packs: " . minPacks . "-" . maxPacks . ")")
     }
 
     ; Sort regular files based on selected method

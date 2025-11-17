@@ -23,7 +23,13 @@ DetectSixCardPack() {
 
     imagePath := A_ScriptDir . "\" . defaultLanguage . "\"
 
-    pBitmap := from_window(WinExist(winTitle))
+    ; Utiliser le cache de bitmap de fenêtre si disponible
+    hwnd := WinExist(winTitle)
+    if (IsFunc("GetWindowBitmapCache")) {
+        pBitmap := Func("GetWindowBitmapCache").Call(hwnd, 150)
+    } else {
+        pBitmap := from_window(hwnd)
+    }
 
     ; Look for 6cardpackindicator.png (background element visible only in 5-card packs)
     Path = %imagePath%6cardpackindicator.png
@@ -54,27 +60,126 @@ DetectFourCardPack() {
 }
 
 ;-------------------------------------------------------------------------------
-; FindBorders - Find card borders of specific type in pack
+; GetImageSearchResultCache - Cache des résultats de recherche avec TTL
 ;-------------------------------------------------------------------------------
-FindBorders(prefix) {
-    global currentPackIs6Card, currentPackIs4Card, scaleParam, winTitle, defaultLanguage
-    count := 0
-    searchVariation := 40 ;
-    if (prefix = "normal") {
-        searchVariation := 75 ; Increasing for megas patch...
+GetImageSearchResultCache(cacheKey, maxAge := 100) {
+    static ImageSearchResultCache := Object()
+    static ImageSearchResultTimestamps := Object()
+    static ImageSearchCacheStats := {hits: 0, misses: 0}
+    
+    ; Vérifier si le résultat est en cache
+    if (ImageSearchResultCache.HasKey(cacheKey) && ImageSearchResultTimestamps.HasKey(cacheKey)) {
+        cacheTime := ImageSearchResultTimestamps[cacheKey]
+        cacheAge := A_TickCount - cacheTime
+        
+        if (cacheAge < maxAge) {
+            ; Cache valide, retourner le résultat
+            ImageSearchCacheStats.hits++
+            return ImageSearchResultCache[cacheKey]
+        } else {
+            ; Cache expiré, supprimer
+            ImageSearchResultCache.Delete(cacheKey)
+            ImageSearchResultTimestamps.Delete(cacheKey)
+        }
     }
-    searchVariation6Card := 60 ; looser tolerance for 6-card positions while we test if top row needles can be re-used for bottom row in 6-card packs
-    searchVariation4Card := 60 ;
+    
+    ; Pas de cache valide
+    ImageSearchCacheStats.misses++
+    return ""
+}
 
-    if (prefix = "shiny2star") { ; some aren't being detected at lower variations
-        searchVariation := 75
-        searchVariation6Card := 75
-        searchVariation4Card := 75
+;-------------------------------------------------------------------------------
+; SetImageSearchResultCache - Met en cache un résultat de recherche
+;-------------------------------------------------------------------------------
+SetImageSearchResultCache(cacheKey, result) {
+    static ImageSearchResultCache := Object()
+    static ImageSearchResultTimestamps := Object()
+    
+    ImageSearchResultCache[cacheKey] := result
+    ImageSearchResultTimestamps[cacheKey] := A_TickCount
+}
+
+;-------------------------------------------------------------------------------
+; GetImageSearchCacheStats - Retourne les statistiques du cache
+;-------------------------------------------------------------------------------
+GetImageSearchCacheStats() {
+    static ImageSearchCacheStats := {hits: 0, misses: 0}
+    
+    total := ImageSearchCacheStats.hits + ImageSearchCacheStats.misses
+    hitRate := total > 0 ? (ImageSearchCacheStats.hits * 100 / total) : 0
+    
+    return {hits: ImageSearchCacheStats.hits, misses: ImageSearchCacheStats.misses, total: total, hitRate: hitRate}
+}
+
+;-------------------------------------------------------------------------------
+; LogImageSearchPerformance - Log les temps d'exécution pour les recherches critiques
+;-------------------------------------------------------------------------------
+LogImageSearchPerformance(functionName, startTime, endTime, additionalInfo := "") {
+    global ImageSearchPerformanceLogging
+    
+    ; Vérifier si le logging de performance est activé
+    if (!ImageSearchPerformanceLogging) {
+        return
     }
+    
+    duration := endTime - startTime
+    logMessage := "[ImageSearch] " . functionName . " - Duration: " . duration . "ms"
+    if (additionalInfo != "") {
+        logMessage .= " - " . additionalInfo
+    }
+    
+    ; Logger dans un fichier de performance (utiliser LogToFile si disponible, sinon OutputDebug)
+    if (IsFunc("LogToFile")) {
+        LogToFile(logMessage, "ImageSearchPerformance.log")
+    } else {
+        OutputDebug, %logMessage%
+    }
+}
 
-    is6CardPack := currentPackIs6Card
-    is4CardPack := currentPackIs4Card
+;-------------------------------------------------------------------------------
+; CalculateBoundingBox - Calcule la bounding box minimale pour un ensemble de coordonnées
+;-------------------------------------------------------------------------------
+CalculateBoundingBox(coordsArray) {
+    if (!coordsArray || coordsArray.Length() = 0) {
+        return {x: 0, y: 0, w: 0, h: 0}
+    }
+    
+    minX := coordsArray[1][1]
+    minY := coordsArray[1][2]
+    maxX := coordsArray[1][3]
+    maxY := coordsArray[1][4]
+    
+    for index, coords in coordsArray {
+        if (coords[1] < minX)
+            minX := coords[1]
+        if (coords[2] < minY)
+            minY := coords[2]
+        if (coords[3] > maxX)
+            maxX := coords[3]
+        if (coords[4] > maxY)
+            maxY := coords[4]
+    }
+    
+    return {x: minX, y: minY, w: maxX - minX, h: maxY - minY}
+}
 
+;-------------------------------------------------------------------------------
+; GetBorderCoordsCache - Cache des coordonnées de zones de recherche
+;-------------------------------------------------------------------------------
+GetBorderCoordsCache(prefix, is6CardPack, is4CardPack, scaleParam) {
+    static BorderCoordsCache := Object()
+    
+    ; Générer une clé de cache unique basée sur les paramètres
+    cacheKey := prefix . "_" . (is6CardPack ? "6" : (is4CardPack ? "4" : "5")) . "_" . scaleParam
+    
+    ; Retourner depuis le cache si disponible
+    if (BorderCoordsCache.HasKey(cacheKey)) {
+        return BorderCoordsCache[cacheKey]
+    }
+    
+    ; Calculer les coordonnées
+    borderCoords := []
+    
     if (is4CardPack) {
         borderCoords := [[96, 284, 123, 286]  ; Card 1
             ,[181, 284, 208, 286] ; Card 2
@@ -170,10 +275,79 @@ FindBorders(prefix) {
             }
         }
     }
+    
+    ; Mettre en cache et retourner
+    BorderCoordsCache[cacheKey] := borderCoords
+    return borderCoords
+}
 
-    pBitmap := from_window(WinExist(winTitle))
+;-------------------------------------------------------------------------------
+; FindBorders - Find card borders of specific type in pack
+;-------------------------------------------------------------------------------
+FindBorders(prefix) {
+    global currentPackIs6Card, currentPackIs4Card, scaleParam, winTitle, defaultLanguage
+    global ImageSearchCacheEnabled, ImageSearchFastMode, ImageSearchScalePercent, ImageSearchCacheTTL
+    global ImageSearchPerformanceLogging
+    
+    ; Démarrer le chronomètre pour le logging de performance
+    startTime := A_TickCount
+    count := 0
+    searchVariation := 40 ;
+    if (prefix = "normal") {
+        searchVariation := 75 ; Increasing for megas patch...
+    }
+    searchVariation6Card := 60 ; looser tolerance for 6-card positions while we test if top row needles can be re-used for bottom row in 6-card packs
+    searchVariation4Card := 60 ;
+
+    if (prefix = "shiny2star") { ; some aren't being detected at lower variations
+        searchVariation := 75
+        searchVariation6Card := 75
+        searchVariation4Card := 75
+    }
+
+    is6CardPack := currentPackIs6Card
+    is4CardPack := currentPackIs4Card
+
+    ; Utiliser le cache des coordonnées
+    borderCoords := GetBorderCoordsCache(prefix, is6CardPack, is4CardPack, scaleParam)
+
+    ; Calculer la bounding box pour optimiser la capture
+    bbox := CalculateBoundingBox(borderCoords)
+    ; Ajouter une marge de sécurité pour éviter les problèmes de bordure
+    margin := 10
+    bbox.x := bbox.x - margin
+    bbox.y := bbox.y - margin
+    bbox.w := bbox.w + (margin * 2)
+    bbox.h := bbox.h + (margin * 2)
+    
+    ; Utiliser le cache de bitmap de fenêtre si disponible, sinon utiliser from_window
+    hwnd := WinExist(winTitle)
+    cacheTTL := ImageSearchCacheTTL ? ImageSearchCacheTTL : 150
+    if (ImageSearchCacheEnabled && IsFunc("GetWindowBitmapCache") && IsFunc("from_window_area")) {
+        ; Utiliser la capture partielle pour réduire la taille mémoire
+        pBitmap := Func("from_window_area").Call(hwnd, bbox.x, bbox.y, bbox.w, bbox.h)
+    } else if (ImageSearchCacheEnabled && IsFunc("GetWindowBitmapCache")) {
+        pBitmap := Func("GetWindowBitmapCache").Call(hwnd, cacheTTL)
+    } else {
+        pBitmap := from_window(hwnd)
+    }
+    
     for index, value in borderCoords {
         coords := borderCoords[A_Index]
+        ; Ajuster les coordonnées si on utilise la capture partielle
+        if (IsFunc("from_window_area") && IsFunc("GetWindowBitmapCache")) {
+            ; Les coordonnées sont relatives à la bounding box
+            relX1 := coords[1] - bbox.x
+            relY1 := coords[2] - bbox.y
+            relX2 := coords[3] - bbox.x
+            relY2 := coords[4] - bbox.y
+        } else {
+            ; Coordonnées absolues
+            relX1 := coords[1]
+            relY1 := coords[2]
+            relX2 := coords[3]
+            relY2 := coords[4]
+        }
         imageName := "" ; prevents accidentally reusing previously loaded imageName if imageName is undefined in custom one-off needles
         currentSearchVariation := searchVariation
 
@@ -211,14 +385,66 @@ FindBorders(prefix) {
 
         Path := A_ScriptDir . "\" . defaultLanguage . "\" . imageName . ".png"
         if (FileExist(Path)) {
-            pNeedle := GetNeedle(Path)
-            vRet := Gdip_ImageSearch_wbb(pBitmap, pNeedle, vPosXY, coords[1], coords[2], coords[3], coords[4], currentSearchVariation)
+            ; Générer une clé de cache pour ce résultat
+            if (IsFunc("from_window_area") && IsFunc("GetWindowBitmapCache")) {
+                cacheKey := hwnd . "_" . prefix . "_" . imageName . "_" . relX1 . "_" . relY1 . "_" . relX2 . "_" . relY2 . "_" . currentSearchVariation
+            } else {
+                cacheKey := hwnd . "_" . prefix . "_" . imageName . "_" . coords[1] . "_" . coords[2] . "_" . coords[3] . "_" . coords[4] . "_" . currentSearchVariation
+            }
+            
+            ; Vérifier le cache si activé
+            if (ImageSearchCacheEnabled) {
+                cachedResult := GetImageSearchResultCache(cacheKey, cacheTTL)
+                if (cachedResult != "") {
+                    vRet := cachedResult
+                } else {
+                    pNeedle := GetNeedle(Path)
+                    ; Utiliser la recherche rapide selon la configuration
+                    useFastSearch := (ImageSearchFastMode && prefix = "normal" && IsFunc("Gdip_ImageSearch_Fast")) ? 1 : 0
+                    scalePercent := ImageSearchScalePercent ? ImageSearchScalePercent : 50
+                
+                ; Utiliser les coordonnées relatives si on a utilisé la capture partielle
+                if (IsFunc("from_window_area") && IsFunc("GetWindowBitmapCache")) {
+                    vRet := Gdip_ImageSearch_wbb(pBitmap, pNeedle, vPosXY, relX1, relY1, relX2, relY2, currentSearchVariation, "", 1, 1, "`n", ",", useFastSearch, scalePercent)
+                } else {
+                    vRet := Gdip_ImageSearch_wbb(pBitmap, pNeedle, vPosXY, coords[1], coords[2], coords[3], coords[4], currentSearchVariation, "", 1, 1, "`n", ",", useFastSearch, scalePercent)
+                }
+                
+                    ; Mettre en cache le résultat si activé
+                    if (ImageSearchCacheEnabled) {
+                        SetImageSearchResultCache(cacheKey, vRet)
+                    }
+                }
+            } else {
+                ; Cache désactivé, effectuer la recherche directement
+                pNeedle := GetNeedle(Path)
+                ; Utiliser la recherche rapide selon la configuration
+                useFastSearch := (ImageSearchFastMode && prefix = "normal" && IsFunc("Gdip_ImageSearch_Fast")) ? 1 : 0
+                scalePercent := ImageSearchScalePercent ? ImageSearchScalePercent : 50
+                
+                ; Utiliser les coordonnées relatives si on a utilisé la capture partielle
+                if (IsFunc("from_window_area") && IsFunc("GetWindowBitmapCache")) {
+                    vRet := Gdip_ImageSearch_wbb(pBitmap, pNeedle, vPosXY, relX1, relY1, relX2, relY2, currentSearchVariation, "", 1, 1, "`n", ",", useFastSearch, scalePercent)
+                } else {
+                    vRet := Gdip_ImageSearch_wbb(pBitmap, pNeedle, vPosXY, coords[1], coords[2], coords[3], coords[4], currentSearchVariation, "", 1, 1, "`n", ",", useFastSearch, scalePercent)
+                }
+            }
+            
             if (vRet = 1) {
                 count += 1
             }
         }
     }
     Gdip_DisposeImage(pBitmap)
+    
+    ; Logger les performances si activé
+    if (ImageSearchPerformanceLogging && IsFunc("LogImageSearchPerformance")) {
+        endTime := A_TickCount
+        cacheStats := GetImageSearchCacheStats()
+        additionalInfo := "prefix=" . prefix . ", count=" . count . ", cacheHitRate=" . Round(cacheStats.hitRate, 2) . "%"
+        LogImageSearchPerformance("FindBorders", startTime, endTime, additionalInfo)
+    }
+    
     return count
 }
 
@@ -242,7 +468,13 @@ FindCard(prefix) {
             ,[64, 301, 122, 303]
             ,[148, 301, 206, 303]]
     }
-    pBitmap := from_window(WinExist(winTitle))
+    ; Utiliser le cache de bitmap de fenêtre si disponible
+    hwnd := WinExist(winTitle)
+    if (IsFunc("GetWindowBitmapCache")) {
+        pBitmap := Func("GetWindowBitmapCache").Call(hwnd, 150)
+    } else {
+        pBitmap := from_window(hwnd)
+    }
     for index, value in borderCoords {
         coords := borderCoords[A_Index]
         Path = %A_ScriptDir%\%defaultLanguage%\%prefix%%A_Index%.png

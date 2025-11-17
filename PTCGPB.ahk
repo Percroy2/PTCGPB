@@ -1850,12 +1850,12 @@ BalanceXMLs:
          fileModifiedTimeDiff := A_Now
          FileGetTime, fileModifiedTime, %A_LoopFileFullPath%, M
          EnvSub, fileModifiedTimeDiff, %fileModifiedTime%, Hours
-         if (fileModifiedTimeDiff >= 24)
+         if (fileModifiedTimeDiff >= 12)
             counter++
       }
       
       Tooltip
-      MsgBox, 0x40000,XML Balance,Done balancing XMLs between %Instances% instances`n%counter% XMLs past 24 hours per instance
+      MsgBox, 0x40000,XML Balance,Done balancing XMLs between %Instances% instances`n%counter% XMLs past 12h per instance
    }
 return
 
@@ -2022,6 +2022,13 @@ LoadSettingsFromIni() {
       IniRead, maxWaitHours, Settings.ini, UserSettings, maxWaitHours, 24
       IniRead, menuExpanded, Settings.ini, UserSettings, menuExpanded, True
       
+      ; Paramètres d'optimisation de la détection d'images
+      IniRead, ImageSearchCacheEnabled, Settings.ini, UserSettings, ImageSearchCacheEnabled, 1
+      IniRead, ImageSearchCacheTTL, Settings.ini, UserSettings, ImageSearchCacheTTL, 100
+      IniRead, ImageSearchFastMode, Settings.ini, UserSettings, ImageSearchFastMode, 1
+      IniRead, ImageSearchScalePercent, Settings.ini, UserSettings, ImageSearchScalePercent, 50
+      IniRead, ImageSearchPerformanceLogging, Settings.ini, UserSettings, ImageSearchPerformanceLogging, 0
+      
       if (!IsNumeric(Instances))
          Instances := 1
       if (!IsNumeric(Columns) || Columns < 1)
@@ -2032,6 +2039,18 @@ LoadSettingsFromIni() {
          Delay := 250
       if (s4tWPMinCards < 1 || s4tWPMinCards > 2)
          s4tWPMinCards := 1
+      
+      ; Validation des paramètres d'optimisation de la détection d'images
+      if (!IsNumeric(ImageSearchCacheTTL) || ImageSearchCacheTTL < 0)
+         ImageSearchCacheTTL := 100
+      if (!IsNumeric(ImageSearchScalePercent) || ImageSearchScalePercent <= 0 || ImageSearchScalePercent > 100)
+         ImageSearchScalePercent := 50
+      if (ImageSearchCacheEnabled != 0 && ImageSearchCacheEnabled != 1)
+         ImageSearchCacheEnabled := 1
+      if (ImageSearchFastMode != 0 && ImageSearchFastMode != 1)
+         ImageSearchFastMode := 1
+      if (ImageSearchPerformanceLogging != 0 && ImageSearchPerformanceLogging != 1)
+         ImageSearchPerformanceLogging := 0
          
       validMethods := "Create Bots (13P)|Inject 13P+|Inject Wonderpick 96P+"
       if (!InStr(validMethods, deleteMethod)) {

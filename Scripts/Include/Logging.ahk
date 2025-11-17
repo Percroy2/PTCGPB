@@ -165,9 +165,9 @@ LogToDiscord(message, screenshotFile := "", ping := false, xmlFile := "", screen
             ProxyServer := ""
         }
         if (proxyEnabled) {
-            curlChar := "curl -k -x " . proxyServer . "/ " 
+            curlChar := "curl -k --max-time 30 --silent --show-error -x " . proxyServer . "/ " 
         } else {
-            curlChar := "curl -k "
+            curlChar := "curl -k --max-time 30 --silent --show-error "
         }
         Loop {
             try {
@@ -207,8 +207,9 @@ LogToDiscord(message, screenshotFile := "", ping := false, xmlFile := "", screen
 
                 LogToFile(curlCommand, "Discord.txt")
 
-                ; Send the message using curl
-                RunWait, %curlCommand%,, Hide
+                ; Send the message using curl with timeout
+                ; Use Run instead of RunWait to avoid blocking, but redirect output to prevent display
+                RunWait, %curlCommand% >nul 2>&1,, Hide
                 break
             }
             catch {
