@@ -814,9 +814,9 @@ CreateAccountList(instance) {
         EnvSub, hoursDiff, %timeVar%, Hours
 
         ; Always maintain strict age requirements - never relax them
-        if (hoursDiff < 12) {
+        if (hoursDiff < 24) {
             if (verboseLogging)
-                LogToFile("Skipping account less than 12h old: " . A_LoopFileName . " (age: " . hoursDiff . " hours)")
+                LogToFile("Skipping account less than 24h old: " . A_LoopFileName . " (age: " . hoursDiff . " hours)")
             continue
         }
 
@@ -864,7 +864,7 @@ CreateAccountList(instance) {
     if (forceRegeneration) {
         LogToFile("FORCED REGENERATION: Found " . totalEligible . " eligible files + " . totalWFlags . " W flag files (cleared used accounts, maintained strict age requirements)")
     } else {
-        LogToFile("Found " . totalEligible . " eligible files + " . totalWFlags . " W flag files (>= 12h old, not recently used, packs: " . minPacks . "-" . maxPacks . ")")
+        LogToFile("Found " . totalEligible . " eligible files + " . totalWFlags . " W flag files (>= 24h old, not recently used, packs: " . minPacks . "-" . maxPacks . ")")
     }
 
     ; Sort regular files based on selected method

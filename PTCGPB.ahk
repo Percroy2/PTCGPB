@@ -1954,12 +1954,12 @@ BalanceXMLs:
          fileModifiedTimeDiff := A_Now
          FileGetTime, fileModifiedTime, %A_LoopFileFullPath%, M
          EnvSub, fileModifiedTimeDiff, %fileModifiedTime%, Hours
-         if (fileModifiedTimeDiff >= 12)
+         if (fileModifiedTimeDiff >= 24)
             counter++
       }
       
       Tooltip
-      MsgBox, 0x40000,XML Balance,Done balancing XMLs between %Instances% instances`n%counter% XMLs past 12h per instance
+      MsgBox, 0x40000,XML Balance,Done balancing XMLs between %Instances% instances`n%counter% XMLs past 24h per instance
    }
 return
 
