@@ -2163,6 +2163,34 @@ LoadSettingsFromIni() {
          ImageSearchFastMode := 1
       if (ImageSearchPerformanceLogging = "ERROR" || (ImageSearchPerformanceLogging != 0 && ImageSearchPerformanceLogging != 1))
          ImageSearchPerformanceLogging := 0
+      
+      ; Paramètres d'optimisation ADB
+      IniRead, AdbCacheEnabled, Settings.ini, UserSettings, AdbCacheEnabled, 1
+      IniRead, AdbCacheTTL, Settings.ini, UserSettings, AdbCacheTTL, 5000
+      IniRead, AdbBatchEnabled, Settings.ini, UserSettings, AdbBatchEnabled, 1
+      IniRead, AdbConnectionPoolSize, Settings.ini, UserSettings, AdbConnectionPoolSize, 3
+      IniRead, AdbPerformanceLogging, Settings.ini, UserSettings, AdbPerformanceLogging, 0
+      
+      ; Convertir en nombres pour éviter les problèmes de type
+      AdbCacheEnabled := AdbCacheEnabled + 0
+      AdbCacheTTL := AdbCacheTTL + 0
+      AdbBatchEnabled := AdbBatchEnabled + 0
+      AdbConnectionPoolSize := AdbConnectionPoolSize + 0
+      AdbPerformanceLogging := AdbPerformanceLogging + 0
+      
+      ; Validation des paramètres d'optimisation ADB
+      if (AdbCacheTTL = "ERROR" || !IsNumeric(AdbCacheTTL) || AdbCacheTTL < 0)
+         AdbCacheTTL := 5000
+      if (AdbConnectionPoolSize = "ERROR" || !IsNumeric(AdbConnectionPoolSize) || AdbConnectionPoolSize < 1)
+         AdbConnectionPoolSize := 3
+      if (AdbConnectionPoolSize > 10)
+         AdbConnectionPoolSize := 10
+      if (AdbCacheEnabled = "ERROR" || (AdbCacheEnabled != 0 && AdbCacheEnabled != 1))
+         AdbCacheEnabled := 1
+      if (AdbBatchEnabled = "ERROR" || (AdbBatchEnabled != 0 && AdbBatchEnabled != 1))
+         AdbBatchEnabled := 1
+      if (AdbPerformanceLogging = "ERROR" || (AdbPerformanceLogging != 0 && AdbPerformanceLogging != 1))
+         AdbPerformanceLogging := 0
          
       validMethods := "Create Bots (13P)|Inject 13P+|Inject Wonderpick 96P+"
       if (!InStr(validMethods, deleteMethod)) {
@@ -2244,6 +2272,11 @@ CreateDefaultSettingsFile() {
       iniContent .= "ImageSearchFastMode=1`n"
       iniContent .= "ImageSearchScalePercent=50`n"
       iniContent .= "ImageSearchPerformanceLogging=0`n"
+      iniContent .= "AdbCacheEnabled=1`n"
+      iniContent .= "AdbCacheTTL=5000`n"
+      iniContent .= "AdbBatchEnabled=1`n"
+      iniContent .= "AdbConnectionPoolSize=3`n"
+      iniContent .= "AdbPerformanceLogging=0`n"
       iniContent .= "`n[Addons]`n"
       iniContent .= "autoLoadAddons=1`n"
       iniContent .= "addonsLaunchDelay=500`n"
@@ -2284,6 +2317,7 @@ SaveAllSettings() {
    global claimSpecialMissions, claimDailyMission, wonderpickForEventMissions
    global checkWPthanks
    global ImageSearchCacheEnabled, ImageSearchCacheTTL, ImageSearchFastMode, ImageSearchScalePercent, ImageSearchPerformanceLogging
+   global AdbCacheEnabled, AdbCacheTTL, AdbBatchEnabled, AdbConnectionPoolSize, AdbPerformanceLogging
 
    if (deleteMethod != "Inject Wonderpick 96P+") {
        packMethod := false
@@ -2468,6 +2502,11 @@ SaveAllSettings() {
    iniContent_Second .= "ImageSearchFastMode=" ImageSearchFastMode "`n"
    iniContent_Second .= "ImageSearchScalePercent=" ImageSearchScalePercent "`n"
    iniContent_Second .= "ImageSearchPerformanceLogging=" ImageSearchPerformanceLogging "`n"
+   iniContent_Second .= "AdbCacheEnabled=" AdbCacheEnabled "`n"
+   iniContent_Second .= "AdbCacheTTL=" AdbCacheTTL "`n"
+   iniContent_Second .= "AdbBatchEnabled=" AdbBatchEnabled "`n"
+   iniContent_Second .= "AdbConnectionPoolSize=" AdbConnectionPoolSize "`n"
+   iniContent_Second .= "AdbPerformanceLogging=" AdbPerformanceLogging "`n"
    iniContent_Second .= "s4tDiscordUserId=" s4tDiscordUserId "`n"
    iniContent_Second .= "s4tDiscordWebhookURL=" s4tDiscordWebhookURL "`n"
    iniContent_Second .= "minStarsShiny=" minStarsShiny "`n"

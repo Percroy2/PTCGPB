@@ -42,6 +42,7 @@ global s4tPendingTradeables := []
 global deviceAccountXmlMap := {} ; prevents Create Bots + s4t making duplicate .xmls within a single run
 global ocrShinedust
 global titleHeight, MuMuv5
+global AdbCacheEnabled, AdbCacheTTL, AdbBatchEnabled, AdbConnectionPoolSize, AdbPerformanceLogging
 
 global avgtotalSeconds
 global verboseLogging
@@ -133,6 +134,34 @@ IniRead, InvalidCheck, %A_ScriptDir%\..\Settings.ini, UserSettings, InvalidCheck
 IniRead, PseudoGodPack, %A_ScriptDir%\..\Settings.ini, UserSettings, PseudoGodPack, 0
 IniRead, minStars, %A_ScriptDir%\..\Settings.ini, UserSettings, minStars, 0
 IniRead, minStarsShiny, %A_ScriptDir%\..\Settings.ini, UserSettings, minStarsShiny, 0
+
+; Paramètres d'optimisation ADB
+IniRead, AdbCacheEnabled, %A_ScriptDir%\..\Settings.ini, UserSettings, AdbCacheEnabled, 1
+IniRead, AdbCacheTTL, %A_ScriptDir%\..\Settings.ini, UserSettings, AdbCacheTTL, 5000
+IniRead, AdbBatchEnabled, %A_ScriptDir%\..\Settings.ini, UserSettings, AdbBatchEnabled, 1
+IniRead, AdbConnectionPoolSize, %A_ScriptDir%\..\Settings.ini, UserSettings, AdbConnectionPoolSize, 3
+IniRead, AdbPerformanceLogging, %A_ScriptDir%\..\Settings.ini, UserSettings, AdbPerformanceLogging, 0
+
+; Convertir en nombres pour éviter les problèmes de type
+AdbCacheEnabled := AdbCacheEnabled + 0
+AdbCacheTTL := AdbCacheTTL + 0
+AdbBatchEnabled := AdbBatchEnabled + 0
+AdbConnectionPoolSize := AdbConnectionPoolSize + 0
+AdbPerformanceLogging := AdbPerformanceLogging + 0
+
+; Validation des paramètres d'optimisation ADB
+if (AdbCacheTTL = "ERROR" || !IsNumeric(AdbCacheTTL) || AdbCacheTTL < 0)
+    AdbCacheTTL := 5000
+if (AdbConnectionPoolSize = "ERROR" || !IsNumeric(AdbConnectionPoolSize) || AdbConnectionPoolSize < 1)
+    AdbConnectionPoolSize := 3
+if (AdbConnectionPoolSize > 10)
+    AdbConnectionPoolSize := 10
+if (AdbCacheEnabled = "ERROR" || (AdbCacheEnabled != 0 && AdbCacheEnabled != 1))
+    AdbCacheEnabled := 1
+if (AdbBatchEnabled = "ERROR" || (AdbBatchEnabled != 0 && AdbBatchEnabled != 1))
+    AdbBatchEnabled := 1
+if (AdbPerformanceLogging = "ERROR" || (AdbPerformanceLogging != 0 && AdbPerformanceLogging != 1))
+    AdbPerformanceLogging := 0
 
 IniRead, MegaGyarados, %A_ScriptDir%\..\Settings.ini, UserSettings, MegaGyarados, 1
 IniRead, MegaBlaziken, %A_ScriptDir%\..\Settings.ini, UserSettings, MegaBlaziken, 1
@@ -957,10 +986,23 @@ HomeAndMission(homeonly := 0, completeSecondMisson=false) {
 }
 
 clearMissionCache() {
-    adbWriteRaw("rm /data/data/jp.pokemon.pokemontcgp/files/UserPreferences/v1/MissionUserPrefs")
-    waitadb()
+    ; Utiliser directement le shell persistant pour éviter le blocage sur ReadLine()
+    global adbShell
+    if (IsObject(adbShell) && adbShell.Status = 0) {
+        try {
+            adbShell.StdIn.WriteLine("rm /data/data/jp.pokemon.pokemontcgp/files/UserPreferences/v1/MissionUserPrefs")
+            Sleep, 200
+        } catch e {
+            if (IsFunc("adbWriteRaw")) {
+                adbWriteRaw("rm /data/data/jp.pokemon.pokemontcgp/files/UserPreferences/v1/MissionUserPrefs")
+                waitadb()
+            }
+        }
+    } else if (IsFunc("adbWriteRaw")) {
+        adbWriteRaw("rm /data/data/jp.pokemon.pokemontcgp/files/UserPreferences/v1/MissionUserPrefs")
+        waitadb()
+    }
 	Sleep, 500
-	;TODO delete all user preferences?
 }
 
 
@@ -1229,8 +1271,13 @@ FindOrLoseImage(X1, Y1, X2, Y2, searchVariation := "", imageName := "DEFAULT", E
             vRet := Gdip_ImageSearch_wbb(pBitmap, pNeedle, vPosXY, 30, 325, 55, 445, searchVariation)
         }
         if (vRet = 1) {
-            adbWriteRaw("rm -rf /data/data/jp.pokemon.pokemontcgp/cache/*") ; clear cache
-            waitadb()
+            ; Utiliser adbExecute pour bénéficier de l'optimisation
+            if (IsFunc("adbExecute")) {
+                adbExecute("rm -rf /data/data/jp.pokemon.pokemontcgp/cache/*", false, true)
+            } else {
+                adbWriteRaw("rm -rf /data/data/jp.pokemon.pokemontcgp/cache/*") ; clear cache
+                waitadb()
+            }
             CreateStatusMessage("Loaded deleted account. Deleting XML...",,,, false)
             if(loadedAccount) {
                 FileDelete, %loadedAccount%
@@ -1522,8 +1569,13 @@ FindImageAndClick(X1, Y1, X2, Y2, searchVariation := "", imageName := "DEFAULT",
                 vRet := Gdip_ImageSearch_wbb(pBitmap, pNeedle, vPosXY, 30, 325, 55, 445, searchVariation)
             }
             if (vRet = 1) {
-                adbWriteRaw("rm -rf /data/data/jp.pokemon.pokemontcgp/cache/*") ; clear cache
-                waitadb()
+                ; Utiliser adbExecute pour bénéficier de l'optimisation
+                if (IsFunc("adbExecute")) {
+                    adbExecute("rm -rf /data/data/jp.pokemon.pokemontcgp/cache/*", false, true)
+                } else {
+                    adbWriteRaw("rm -rf /data/data/jp.pokemon.pokemontcgp/cache/*") ; clear cache
+                    waitadb()
+                }
                 CreateStatusMessage("Loaded deleted account. Deleting XML...",,,, false)
                 if(loadedAccount) {
                     FileDelete, %loadedAccount%
@@ -1701,12 +1753,22 @@ restartGameInstance(reason, RL := true) {
         
         ; Restart without deadcheck
         waitadb()
-        adbWriteRaw("am force-stop jp.pokemon.pokemontcgp")
-        waitadb()
-        Sleep, 2000
-        clearMissionCache()
-        adbWriteRaw("am start -W -n jp.pokemon.pokemontcgp/com.unity3d.player.UnityPlayerActivity -f 0x10018000")
-        waitadb()
+        
+        ; Optimiser les commandes ADB avec batch si disponible
+        if (IsFunc("adbExecuteBatch") && AdbBatchEnabled) {
+            commands := []
+            commands.Push("am force-stop jp.pokemon.pokemontcgp")
+            commands.Push("am start -W -n jp.pokemon.pokemontcgp/com.unity3d.player.UnityPlayerActivity -f 0x10018000")
+            adbExecuteBatch(commands)
+        } else {
+            adbWriteRaw("am force-stop jp.pokemon.pokemontcgp")
+            waitadb()
+            Sleep, 2000
+            clearMissionCache()
+            adbWriteRaw("am start -W -n jp.pokemon.pokemontcgp/com.unity3d.player.UnityPlayerActivity -f 0x10018000")
+            waitadb()
+        }
+        
         Sleep, 5000
         
         return  ; Exit early to continue with next account
@@ -1733,17 +1795,30 @@ restartGameInstance(reason, RL := true) {
         Reload
     } else {
         waitadb()
-        adbWriteRaw("am force-stop jp.pokemon.pokemontcgp")
-        waitadb()
-        Sleep, 2000
-        clearMissionCache()
-        if (!RL && DeadCheck = 0) {
-            adbWriteRaw("rm /data/data/jp.pokemon.pokemontcgp/shared_prefs/deviceAccount:.xml") ; delete account data
+        
+        ; Optimiser les commandes ADB avec batch si disponible
+        if (IsFunc("adbExecuteBatch") && AdbBatchEnabled) {
+            commands := []
+            commands.Push("am force-stop jp.pokemon.pokemontcgp")
+            if (!RL && DeadCheck = 0) {
+                commands.Push("rm /data/data/jp.pokemon.pokemontcgp/shared_prefs/deviceAccount:.xml")
+            }
+            commands.Push("am start -W -n jp.pokemon.pokemontcgp/com.unity3d.player.UnityPlayerActivity -f 0x10018000")
+            adbExecuteBatch(commands)
+        } else {
+            adbWriteRaw("am force-stop jp.pokemon.pokemontcgp")
+            waitadb()
+            Sleep, 2000
+            clearMissionCache()
+            if (!RL && DeadCheck = 0) {
+                adbWriteRaw("rm /data/data/jp.pokemon.pokemontcgp/shared_prefs/deviceAccount:.xml") ; delete account data
+            }
+            waitadb()
+            Sleep, 500
+            adbWriteRaw("am start -W -n jp.pokemon.pokemontcgp/com.unity3d.player.UnityPlayerActivity -f 0x10018000")
+            waitadb()
         }
-        waitadb()
-        Sleep, 500
-        adbWriteRaw("am start -W -n jp.pokemon.pokemontcgp/com.unity3d.player.UnityPlayerActivity -f 0x10018000")
-        waitadb()
+        
         Sleep, 5000
         
         if (RL) {
@@ -4180,4 +4255,10 @@ return
 
 
 ; =====================
+
+IsNumeric(var) {
+    if var is number
+        return true
+    return false
+}
 

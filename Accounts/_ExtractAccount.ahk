@@ -168,12 +168,19 @@ saveAccount() {
     count := 0
 
     Loop {
-
-        adbShell.StdIn.WriteLine("rm /sdcard/deviceAccount.xml")
-
-        Sleep, 500
-
-        adbShell.StdIn.WriteLine("cp /data/data/jp.pokemon.pokemontcgp/shared_prefs/deviceAccount:.xml /sdcard/deviceAccount.xml")
+        ; Optimiser les commandes ADB avec batch si disponible
+        if (IsFunc("adbWriteRawBatch") && AdbBatchEnabled) {
+            commands := []
+            commands.Push("rm /sdcard/deviceAccount.xml")
+            commands.Push("cp /data/data/jp.pokemon.pokemontcgp/shared_prefs/deviceAccount:.xml /sdcard/deviceAccount.xml")
+            adbWriteRawBatch(commands)
+            commandsCount := commands.MaxIndex() ? commands.MaxIndex() : 0
+            waitadb(commandsCount)
+        } else {
+            adbShell.StdIn.WriteLine("rm /sdcard/deviceAccount.xml")
+            Sleep, 500
+            adbShell.StdIn.WriteLine("cp /data/data/jp.pokemon.pokemontcgp/shared_prefs/deviceAccount:.xml /sdcard/deviceAccount.xml")
+        }
 
         Sleep, 500
 
@@ -193,9 +200,17 @@ saveAccount() {
         count++
     }
 
-    adbShell.StdIn.WriteLine("am force-stop jp.pokemon.pokemontcgp")
-
-    adbShell.StdIn.WriteLine("rm /data/data/jp.pokemon.pokemontcgp/shared_prefs/deviceAccount:.xml") ; delete account data
+    ; Optimiser les commandes ADB avec batch si disponible
+    if (IsFunc("adbWriteRawBatch") && AdbBatchEnabled) {
+        commands := []
+        commands.Push("am force-stop jp.pokemon.pokemontcgp")
+        commands.Push("rm /data/data/jp.pokemon.pokemontcgp/shared_prefs/deviceAccount:.xml")
+        adbWriteRawBatch(commands)
+        waitadb(commands.Length())
+    } else {
+        adbShell.StdIn.WriteLine("am force-stop jp.pokemon.pokemontcgp")
+        adbShell.StdIn.WriteLine("rm /data/data/jp.pokemon.pokemontcgp/shared_prefs/deviceAccount:.xml") ; delete account data
+    }
 
     MsgBox, Success! Extracted account '%fileName%.xml' to the Accounts folder, closed the game, and deleted the local save from the instance.
 }

@@ -519,10 +519,17 @@ restartGameInstance(reason, RL := true){
     else
         CreateStatusMessage("Restarting game...",,,, false)
 
-    adbWriteRaw("am force-stop jp.pokemon.pokemontcgp")
-    ;adbShell.StdIn.WriteLine("rm -rf /data/data/jp.pokemon.pokemontcgp/cache/*") ; clear cache
-    Sleep, 3000
-    adbWriteRaw("am start -n jp.pokemon.pokemontcgp/com.unity3d.player.UnityPlayerActivity")
+    ; Optimiser les commandes ADB avec batch si disponible
+    if (IsFunc("adbExecuteBatch") && AdbBatchEnabled) {
+        commands := []
+        commands.Push("am force-stop jp.pokemon.pokemontcgp")
+        commands.Push("am start -n jp.pokemon.pokemontcgp/com.unity3d.player.UnityPlayerActivity")
+        adbExecuteBatch(commands)
+    } else {
+        adbWriteRaw("am force-stop jp.pokemon.pokemontcgp")
+        Sleep, 3000
+        adbWriteRaw("am start -n jp.pokemon.pokemontcgp/com.unity3d.player.UnityPlayerActivity")
+    }
 
     Sleep, 3000
     if(RL) {

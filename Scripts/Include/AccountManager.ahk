@@ -22,7 +22,7 @@ loadAccount() {
     global beginnerMissionsDone, soloBattleMissionDone, intermediateMissionsDone, specialMissionsDone
     global accountHasPackInTesting, resetSpecialMissionsDone, stopToggle, winTitle, loadDir
     global accountFileName, accountOpenPacks, accountFileNameTmp, accountFileNameOrig, accountHasPackInfo
-    global currentLoadedAccountIndex, adbShell, adbPath, adbPort
+    global currentLoadedAccountIndex, adbShell, adbPath, adbPort, AdbBatchEnabled
 
     beginnerMissionsDone := 0
     soloBattleMissionDone := 0
@@ -115,18 +115,55 @@ loadAccount() {
         return false
     }
 
-    adbWriteRaw("am force-stop jp.pokemon.pokemontcgp")
-    waitadb()
-    RunWait, % adbPath . " -s 127.0.0.1:" . adbPort . " push " . loadFile . " /sdcard/deviceAccount.xml",, Hide
-    waitadb()
-    adbWriteRaw("cp /sdcard/deviceAccount.xml /data/data/jp.pokemon.pokemontcgp/shared_prefs/deviceAccount:.xml")
-    waitadb()
-    adbWriteRaw("rm /sdcard/deviceAccount.xml")
-    waitadb()
-    ; Reliably restart the app: Wait for launch, and start in a clean, new task without animation.
-    adbWriteRaw("am start -W -n jp.pokemon.pokemontcgp/com.unity3d.player.UnityPlayerActivity -f 0x10018000")
-    waitadb()
+    ; Utiliser les nouvelles fonctions ADB optimisées
+    LogToFile("[AccountManager] loadAccount: Starting ADB operations for " . accountFileName)
+    if (IsFunc("adbExecuteBatch") && AdbBatchEnabled) {
+        LogToFile("[AccountManager] loadAccount: Using optimized ADB batch functions")
+        ; D'abord, arrêter l'application (doit être fait avant le push)
+        if (IsFunc("adbExecute")) {
+            LogToFile("[AccountManager] loadAccount: Stopping app with adbExecute")
+            adbExecute("am force-stop jp.pokemon.pokemontcgp", false, true)
+        } else {
+            LogToFile("[AccountManager] loadAccount: Stopping app with adbWriteRaw (fallback)")
+            adbWriteRaw("am force-stop jp.pokemon.pokemontcgp")
+            waitadb()
+        }
+        
+        ; Faire le push (ne peut pas être batché avec shell)
+        LogToFile("[AccountManager] loadAccount: Pushing account file: " . loadFile)
+        RunWait, % adbPath . " -s 127.0.0.1:" . adbPort . " push " . loadFile . " /sdcard/deviceAccount.xml",, Hide
+        LogToFile("[AccountManager] loadAccount: Push completed")
+        
+        ; Ensuite, grouper les commandes restantes en batch pour optimiser
+        LogToFile("[AccountManager] loadAccount: Executing batch commands (cp, rm, am start)")
+        commands := []
+        commands.Push("cp /sdcard/deviceAccount.xml /data/data/jp.pokemon.pokemontcgp/shared_prefs/deviceAccount:.xml")
+        commands.Push("rm /sdcard/deviceAccount.xml")
+        commands.Push("am start -W -n jp.pokemon.pokemontcgp/com.unity3d.player.UnityPlayerActivity -f 0x10018000")
+        adbExecuteBatch(commands)
+        LogToFile("[AccountManager] loadAccount: Batch commands completed")
+    } else {
+        ; Fallback vers l'ancienne méthode
+        LogToFile("[AccountManager] loadAccount: Using legacy ADB functions (fallback)")
+        LogToFile("[AccountManager] loadAccount: Stopping app")
+        adbWriteRaw("am force-stop jp.pokemon.pokemontcgp")
+        waitadb()
+        LogToFile("[AccountManager] loadAccount: Pushing account file: " . loadFile)
+        RunWait, % adbPath . " -s 127.0.0.1:" . adbPort . " push " . loadFile . " /sdcard/deviceAccount.xml",, Hide
+        LogToFile("[AccountManager] loadAccount: Push completed, copying to shared_prefs")
+        waitadb()
+        adbWriteRaw("cp /sdcard/deviceAccount.xml /data/data/jp.pokemon.pokemontcgp/shared_prefs/deviceAccount:.xml")
+        waitadb()
+        LogToFile("[AccountManager] loadAccount: Removing temp file and starting app")
+        adbWriteRaw("rm /sdcard/deviceAccount.xml")
+        waitadb()
+        ; Reliably restart the app: Wait for launch, and start in a clean, new task without animation.
+        adbWriteRaw("am start -W -n jp.pokemon.pokemontcgp/com.unity3d.player.UnityPlayerActivity -f 0x10018000")
+        waitadb()
+        LogToFile("[AccountManager] loadAccount: All ADB operations completed")
+    }
     Sleep, 500   ; Reduced from 1000
+    LogToFile("[AccountManager] loadAccount: Parsing account filename for pack info")
     ; Parse account filename for pack info (unchanged)
     if (InStr(accountFileName, "P")) {
         accountFileNameParts := StrSplit(accountFileName, "P")
@@ -137,7 +174,9 @@ loadAccount() {
         accountFileNameOrig := accountFileName
     }
 
+    LogToFile("[AccountManager] loadAccount: Calling getMetaData()")
     getMetaData()
+    LogToFile("[AccountManager] loadAccount: getMetaData() completed, returning loadFile: " . loadFile)
 
     return loadFile
 }
@@ -555,15 +594,27 @@ UpdateSavedXml(xmlPath) {
     Loop {
         CreateStatusMessage("Updating saved XML...",,,, false)
 
-        adbWriteRaw("cp -f /data/data/jp.pokemon.pokemontcgp/shared_prefs/deviceAccount:.xml /sdcard/deviceAccount.xml")
-        waitadb()
+        ; Utiliser batch pour optimiser les commandes ADB
+        if (IsFunc("adbExecuteBatch") && AdbBatchEnabled) {
+            commands := []
+            commands.Push("cp -f /data/data/jp.pokemon.pokemontcgp/shared_prefs/deviceAccount:.xml /sdcard/deviceAccount.xml")
+            adbExecuteBatch(commands)
+        } else {
+            adbWriteRaw("cp -f /data/data/jp.pokemon.pokemontcgp/shared_prefs/deviceAccount:.xml /sdcard/deviceAccount.xml")
+            waitadb()
+        }
         Sleep, 500
 
         RunWait, % adbPath . " -s 127.0.0.1:" . adbPort . " pull /sdcard/deviceAccount.xml """ . xmlPath,, Hide
 
         Sleep, 500
 
-        adbWriteRaw("rm /sdcard/deviceAccount.xml")
+        ; Utiliser adbExecute pour la suppression
+        if (IsFunc("adbExecute")) {
+            adbExecute("rm /sdcard/deviceAccount.xml", false, true)
+        } else {
+            adbWriteRaw("rm /sdcard/deviceAccount.xml")
+        }
         Sleep, 500
 
         FileGetSize, OutputVar, %xmlPath%

@@ -234,16 +234,29 @@ loadAccount() {
         WinMinimize, ahk_pid %processID%
     }
 
-    adbShell.StdIn.WriteLine("am force-stop jp.pokemon.pokemontcgp")
-    Sleep, 200
-
-    ; Clear app data to ensure no previous account information remains
-    adbShell.StdIn.WriteLine("rm -f /data/data/jp.pokemon.pokemontcgp/shared_prefs/deviceAccount:.xml")
-    Sleep, 200
-
-    Loop, % UserPreferences.MaxIndex() {
-        adbShell.StdIn.WriteLine("rm -f " . UserPreferencesPath . UserPreferences[A_Index])
+    ; Optimiser les commandes ADB avec batch si disponible
+    if (IsFunc("adbWriteRawBatch") && AdbBatchEnabled) {
+        commands := []
+        commands.Push("am force-stop jp.pokemon.pokemontcgp")
+        commands.Push("rm -f /data/data/jp.pokemon.pokemontcgp/shared_prefs/deviceAccount:.xml")
+        Loop, % UserPreferences.MaxIndex() {
+            commands.Push("rm -f " . UserPreferencesPath . UserPreferences[A_Index])
+        }
+        adbWriteRawBatch(commands)
+        commandsCount := commands.MaxIndex() ? commands.MaxIndex() : 0
+        waitadb(commandsCount)
+    } else {
+        adbShell.StdIn.WriteLine("am force-stop jp.pokemon.pokemontcgp")
         Sleep, 200
+
+        ; Clear app data to ensure no previous account information remains
+        adbShell.StdIn.WriteLine("rm -f /data/data/jp.pokemon.pokemontcgp/shared_prefs/deviceAccount:.xml")
+        Sleep, 200
+
+        Loop, % UserPreferences.MaxIndex() {
+            adbShell.StdIn.WriteLine("rm -f " . UserPreferencesPath . UserPreferences[A_Index])
+            Sleep, 200
+        }
     }
 
     loadDir := selectedFilePath
@@ -266,26 +279,40 @@ loadAccount() {
     RunWait, % adbPath . " -s 127.0.0.1:" . adbPorts . " push """ . loadDir . """ /sdcard/deviceAccount.xml",, Hide
     Sleep, 150
 
-    ; Create the shared_prefs directory if it doesn't exist
-    adbShell.StdIn.WriteLine("mkdir -p /data/data/jp.pokemon.pokemontcgp/shared_prefs")
-    Sleep, 100
+    ; Optimiser les commandes ADB avec batch si disponible
+    if (IsFunc("adbWriteRawBatch") && AdbBatchEnabled) {
+        commands := []
+        commands.Push("mkdir -p /data/data/jp.pokemon.pokemontcgp/shared_prefs")
+        commands.Push("cp /sdcard/deviceAccount.xml /data/data/jp.pokemon.pokemontcgp/shared_prefs/deviceAccount:.xml")
+        commands.Push("chmod 664 /data/data/jp.pokemon.pokemontcgp/shared_prefs/deviceAccount:.xml && chown system:system /data/data/jp.pokemon.pokemontcgp/shared_prefs/deviceAccount:.xml")
+        commands.Push("rm /sdcard/deviceAccount.xml")
+        commands.Push("am start -n jp.pokemon.pokemontcgp/jp.pokemon.pokemontcgp.UnityPlayerActivity")
+        commands.Push("am start -n jp.pokemon.pokemontcgp/com.unity3d.player.UnityPlayerActivity")
+        adbWriteRawBatch(commands)
+        commandsCount := commands.MaxIndex() ? commands.MaxIndex() : 0
+        waitadb(commandsCount)
+    } else {
+        ; Create the shared_prefs directory if it doesn't exist
+        adbShell.StdIn.WriteLine("mkdir -p /data/data/jp.pokemon.pokemontcgp/shared_prefs")
+        Sleep, 100
 
-    ; Copy the file with proper permissions
-    adbShell.StdIn.WriteLine("cp /sdcard/deviceAccount.xml /data/data/jp.pokemon.pokemontcgp/shared_prefs/deviceAccount:.xml")
-    Sleep, 100
+        ; Copy the file with proper permissions
+        adbShell.StdIn.WriteLine("cp /sdcard/deviceAccount.xml /data/data/jp.pokemon.pokemontcgp/shared_prefs/deviceAccount:.xml")
+        Sleep, 100
 
-    ; Set proper permissions and ownership (combined commands with shorter delay)
-    adbShell.StdIn.WriteLine("chmod 664 /data/data/jp.pokemon.pokemontcgp/shared_prefs/deviceAccount:.xml && chown system:system /data/data/jp.pokemon.pokemontcgp/shared_prefs/deviceAccount:.xml")
-    Sleep, 200
+        ; Set proper permissions and ownership (combined commands with shorter delay)
+        adbShell.StdIn.WriteLine("chmod 664 /data/data/jp.pokemon.pokemontcgp/shared_prefs/deviceAccount:.xml && chown system:system /data/data/jp.pokemon.pokemontcgp/shared_prefs/deviceAccount:.xml")
+        Sleep, 200
 
-    ; Clean up and launch app (reduced delay between operations)
-    adbShell.StdIn.WriteLine("rm /sdcard/deviceAccount.xml")
+        ; Clean up and launch app (reduced delay between operations)
+        adbShell.StdIn.WriteLine("rm /sdcard/deviceAccount.xml")
 
-    ; Launch the app with both commands in quick succession
-    adbShell.StdIn.WriteLine("am start -n jp.pokemon.pokemontcgp/jp.pokemon.pokemontcgp.UnityPlayerActivity")
-    Sleep, 100
+        ; Launch the app with both commands in quick succession
+        adbShell.StdIn.WriteLine("am start -n jp.pokemon.pokemontcgp/jp.pokemon.pokemontcgp.UnityPlayerActivity")
+        Sleep, 100
 
-    adbShell.StdIn.WriteLine("am start -n jp.pokemon.pokemontcgp/com.unity3d.player.UnityPlayerActivity")
+        adbShell.StdIn.WriteLine("am start -n jp.pokemon.pokemontcgp/com.unity3d.player.UnityPlayerActivity")
+    }
 
     ; Close the shell after all operations complete
     adbShell.Terminate()
